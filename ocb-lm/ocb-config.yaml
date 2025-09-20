@@ -1,0 +1,37 @@
+# https://github.com/open-telemetry/opentelemetry-collector-releases/blob/main/distributions/otelcol-contrib/manifest.yaml
+
+dist:
+    name: otelcol
+    description: Custom distribution of the OpenTelemetry Collector
+    version: 0.135.0
+    debug_compilation: false
+    output_path: /tmp/otelcol
+
+extensions:
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.135.0
+    # - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/basicauthextension v0.135.0
+
+receivers:
+    - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.135.0
+
+processors:
+    - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.135.0
+    - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.135.0
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor v0.135.0
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/filterprocessor v0.135.0
+
+exporters:
+    # - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.135.0
+    - gomod: go.opentelemetry.io/collector/exporter/nopexporter v0.135.0
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter v0.135.0
+
+connectors:
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/connector/routingconnector v0.135.0
+
+providers:
+    - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.41.0
+    - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.41.0
+
+replaces:
+    # custom logicmonitor exporter with metric support
+    - github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter => github.com/monitoringartist/opentelemetry-collector-contrib/exporter/logicmonitorexporter v0.135.0-lm

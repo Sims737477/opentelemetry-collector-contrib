@@ -1,0 +1,34 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+processors:
+  batch:
+
+exporters:
+  logicmonitor:
+    endpoint: "https://${env:LM_COMPANY}.logicmonitor.com/rest"
+    api_token:
+      access_id: "${env:LM_ACCESS_ID}"
+      access_key: "${env:LM_ACCESS_KEY}"
+
+extensions:
+  health_check:
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logicmonitor]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logicmonitor]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [logicmonitor]
