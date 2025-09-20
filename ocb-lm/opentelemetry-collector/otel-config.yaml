@@ -47,6 +47,7 @@ exporters:
     api_token:
       access_id: "${env:LM_ACCESS_ID}"
       access_key: "${env:LM_ACCESS_KEY}"
+  nop:
 
 extensions:
   health_check:
@@ -65,8 +66,8 @@ service:
               otlp:
                 protocol: http/protobuf
                 endpoint: http://prometheus:9090/api/v1/otlp
-    # logs:
-    #   level: detailed
+    logs:
+      level: debug
   pipelines:
     metrics:
       receivers: [prometheus]
@@ -75,8 +76,8 @@ service:
     traces:
       receivers: [otlp]
       processors: [batch]
-      exporters: [logicmonitor]
+      exporters: [nop]
     logs:
       receivers: [tcplog]
       processors: [batch]
-      exporters: [logicmonitor]
+      exporters: [nop]
