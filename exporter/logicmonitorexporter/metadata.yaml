@@ -3,7 +3,7 @@ type: logicmonitor
 status:
   class: exporter
   stability:
-    alpha: [traces, logs]
+    alpha: [traces, logs, metrics]
   distributions: [contrib]
   codeowners:
     active: [bogdandrutu, khyatigandhi6, avadhut123pisal]

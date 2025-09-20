@@ -24,6 +24,7 @@ func NewFactory() exporter.Factory {
 		createDefaultConfig,
 		exporter.WithLogs(createLogsExporter, metadata.LogsStability),
 		exporter.WithTraces(createTracesExporter, metadata.TracesStability),
+		exporter.WithMetrics(createMetricsExporter, metadata.MetricsStability),
 	)
 }
 
@@ -64,5 +65,22 @@ func createTracesExporter(ctx context.Context, set exporter.Settings, cfg compon
 		exporterhelper.WithRetry(c.BackOffConfig),
 		exporterhelper.WithQueue(c.QueueSettings),
 		exporterhelper.WithShutdown(lmTraceExp.shutdown),
+	)
+}
+
+func createMetricsExporter(ctx context.Context, set exporter.Settings, cfg component.Config) (exporter.Metrics, error) {
+	lmMetricExp := newMetricsExporter(ctx, cfg, set)
+	c := cfg.(*Config)
+
+	return exporterhelper.NewMetrics(
+		ctx,
+		set,
+		cfg,
+		lmMetricExp.PushMetricData,
+		exporterhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
+		exporterhelper.WithStart(lmMetricExp.start),
+		exporterhelper.WithRetry(c.BackOffConfig),
+		exporterhelper.WithQueue(c.QueueSettings),
+		exporterhelper.WithShutdown(lmMetricExp.shutdown),
 	)
 }
