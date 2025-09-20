@@ -235,44 +235,69 @@ func (s *Sender) handleError(ingestResponse *lmsdkmetrics.SendMetricResponse, er
 			// Log detailed error information for 207 Multi-Status responses
 			s.logger.Error("Multi-Status response received from LogicMonitor API",
 				zap.Int("status_code", ingestResponse.StatusCode),
-				zap.Error(ingestResponse.Error),
+				zap.String("response_message", ingestResponse.Message),
 				zap.Int("total_errors", len(ingestResponse.MultiStatus)))
 			
 			var permanentErrors []string
 			var temporaryErrors []string
 			
+			// Log each individual error with detailed information
 			for i, status := range ingestResponse.MultiStatus {
-				errorMsg := fmt.Sprintf("Item %d: Code=%.0f, Error=%s", i, status.Code, status.Error)
-				s.logger.Error("Individual item error", 
-					zap.Int("item_index", i),
-					zap.Float64("error_code", status.Code),
-					zap.String("error_message", status.Error))
+				errorCode := int(status.Code)
 				
-				if isPermanentClientFailure(int(status.Code)) {
+				// Log structured error information for better debugging
+				s.logger.Error("LogicMonitor API rejected item",
+					zap.Int("item_index", i),
+					zap.Int("error_code", errorCode),
+					zap.String("error_message", status.Error),
+					zap.Bool("is_permanent", isPermanentClientFailure(errorCode)))
+				
+				errorMsg := fmt.Sprintf("Item %d: Code=%d, Error=%s", i, errorCode, status.Error)
+				
+				if isPermanentClientFailure(errorCode) {
 					permanentErrors = append(permanentErrors, errorMsg)
 				} else {
 					temporaryErrors = append(temporaryErrors, errorMsg)
 				}
 			}
 			
-			// If we have permanent errors, return them as permanent
+			// Log summary of error categorization
 			if len(permanentErrors) > 0 {
 				s.logger.Error("Permanent errors detected in Multi-Status response",
-					zap.Strings("permanent_errors", permanentErrors),
-					zap.Strings("temporary_errors", temporaryErrors))
-				return consumererror.NewPermanent(fmt.Errorf("permanent failure errors: %v, complete error log %w", permanentErrors, ingestResponse.Error))
+					zap.Int("permanent_error_count", len(permanentErrors)),
+					zap.Int("temporary_error_count", len(temporaryErrors)),
+					zap.Strings("permanent_errors", permanentErrors))
+				
+				if len(temporaryErrors) > 0 {
+					s.logger.Warn("Temporary errors also present (will be retried separately)",
+						zap.Strings("temporary_errors", temporaryErrors))
+				}
+				
+				return consumererror.NewPermanent(fmt.Errorf("permanent failure errors detected: %v", permanentErrors))
 			}
 			
 			// All errors are temporary, log them and return as retryable
-			s.logger.Warn("All errors in Multi-Status response are temporary",
+			s.logger.Warn("All errors in Multi-Status response are temporary (will be retried)",
+				zap.Int("temporary_error_count", len(temporaryErrors)),
 				zap.Strings("temporary_errors", temporaryErrors))
+			
+			return fmt.Errorf("temporary failures detected: %v", temporaryErrors)
 		}
+		
+		// Handle non-207 error responses
 		if isPermanentClientFailure(ingestResponse.StatusCode) {
 			s.logger.Error("Permanent client failure",
 				zap.Int("status_code", ingestResponse.StatusCode),
+				zap.String("response_message", ingestResponse.Message),
 				zap.Error(ingestResponse.Error))
 			return consumererror.NewPermanent(ingestResponse.Error)
 		}
+		
+		// Temporary error
+		s.logger.Warn("Temporary error from LogicMonitor API",
+			zap.Int("status_code", ingestResponse.StatusCode),
+			zap.String("response_message", ingestResponse.Message),
+			zap.Error(ingestResponse.Error))
 		return ingestResponse.Error
 	}
 	
@@ -280,6 +305,11 @@ func (s *Sender) handleError(ingestResponse *lmsdkmetrics.SendMetricResponse, er
 	if err != nil && strings.Contains(err.Error(), "validation failed") {
 		s.logger.Error("Validation error detected", zap.Error(err))
 		return consumererror.NewPermanent(err)
+	}
+	
+	// Generic error
+	if err != nil {
+		s.logger.Error("Unexpected error during metric export", zap.Error(err))
 	}
 	
 	return err
