@@ -13,6 +13,8 @@ extensions:
 
 receivers:
     - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.135.0
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/prometheusreceiver v0.135.0
+    - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/tcplogreceiver v0.135.0
 
 processors:
     - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.135.0
@@ -34,4 +36,4 @@ providers:
 
 replaces:
     # custom logicmonitor exporter with metric support
-    - github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter => github.com/monitoringartist/opentelemetry-collector-contrib/exporter/logicmonitorexporter v0.135.0-lm
+    - github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter => github.com/monitoringartist/opentelemetry-collector-contrib/exporter/logicmonitorexporter v0.0.0-20250920203839-7ff40cafdf65

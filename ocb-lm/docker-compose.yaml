@@ -36,5 +36,7 @@ services:
       - ./opentelemetry-collector/otel-config.yaml:/etc/otel-config.yaml
     command:
       - "--config=/etc/otel-config.yaml"
+    env_file:
+      - lm.env
     depends_on:
       - prometheus

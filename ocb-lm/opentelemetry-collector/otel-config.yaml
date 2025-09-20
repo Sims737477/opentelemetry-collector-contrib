@@ -3,6 +3,40 @@ receivers:
     protocols:
       grpc:
       http:
+  prometheus:
+    config:
+      scrape_configs:
+      - job_name: grafana-metrics
+        scrape_interval: 10s
+        static_configs:
+        - targets: ['grafana:3000']
+  tcplog:
+    listen_address: 0.0.0.0:54526
+    operators:
+      - type: regex_parser
+        regex: (?P<timestamp_field>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)
+      - type: add
+        field: body
+        value: EXPR(replace(body, attributes.timestamp_field, 'Oct 11 22:14:15'))
+      - type: syslog_parser
+        protocol: rfc3164
+        location: UTC
+      - type: time_parser
+        parse_from: attributes.timestamp_field
+        layout: "%Y-%m-%dT%H:%M:%SZ"
+        layout_type: strptime
+      - type: move
+        if: "attributes.message != nil"
+        from: attributes.message
+        to: body
+      - type: remove
+        field: attributes.timestamp_field
+      - type: remove
+        field: attributes.proc_id
+      - type: remove
+        field: attributes.priority
+      - type: remove
+        field: attributes.facility
 
 processors:
   batch:
@@ -19,16 +53,30 @@ extensions:
 
 service:
   extensions: [health_check]
+  telemetry:
+    resource:
+      service.name: grafana-opentelemetry
+      author: monitoriginartist
+    metrics:
+      level: detailed
+      readers:
+        - periodic:
+            exporter:
+              otlp:
+                protocol: http/protobuf
+                endpoint: http://prometheus:9090/api/v1/otlp
+    # logs:
+    #   level: detailed
   pipelines:
+    metrics:
+      receivers: [prometheus]
+      processors: [batch]
+      exporters: [logicmonitor]
     traces:
       receivers: [otlp]
       processors: [batch]
       exporters: [logicmonitor]
-    metrics:
-      receivers: [otlp]
-      processors: [batch]
-      exporters: [logicmonitor]
     logs:
-      receivers: [otlp]
+      receivers: [tcplog]
       processors: [batch]
       exporters: [logicmonitor]
