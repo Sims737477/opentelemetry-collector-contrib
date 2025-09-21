@@ -71,34 +71,6 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 					DataSourceDisplayName: "OpenTelemetry",
 					DataSourceGroup:       "OpenTelemetry",
 				}
-
-				// Log the payload structure that will be sent to LogicMonitor
-				payloadPreview := map[string]interface{}{
-					"resourceName": resourceName,
-					"resourceIds": resourceID,
-					"resourceProperties": resourceProps,
-					"dataSource": dsInput.DataSourceName,
-					"dataSourceDisplayName": dsInput.DataSourceDisplayName,
-					"dataSourceGroup": dsInput.DataSourceGroup,
-					"instances": []map[string]interface{}{
-						{
-							"instanceName": metric.Name(),
-							"instanceDisplayName": metric.Name(),
-							"instanceProperties": metric.Type().String(),
-							"dataPoints": []map[string]interface{}{
-								{
-									"dataPointName": metric.Name(),
-									"dataPointType": metric.Type().String(),
-									"dataPointAggregationType": metric.Unit(),
-									"values": metric.Description(),
-								},
-							},
-						},
-					},
-				}
-				
-				s.logger.Debug("Sending metric data - LogicMonitor payload preview",
-					zap.Any("payload_structure", payloadPreview))
 				
 				// Process different metric types
 				var err error
@@ -244,7 +216,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 					{
 						"dataPointName": dpInput.DataPointName,
 						"dataPointType": dpInput.DataPointType,
-						"dataPointAggregationType": dpInput.DataPointAggregationType,
+						"dataPointAggregationType": "none",
 						"values": dpInput.Value,
 					},
 				},
@@ -252,7 +224,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		},
 	}
 	
-	s.logger.Debug("Sending datapoint - Complete LogicMonitor API payload",
+	s.logger.Debug("Sending datapoint - LogicMonitor API payload",
 		zap.Any("logicmonitor_payload", completePayload))
 	
 	// Send to LogicMonitor
