@@ -68,8 +68,8 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 				// Create datasource input
 				dsInput := model.DatasourceInput{
 					DataSourceName:        "OpenTelemetry",
-					DataSourceDisplayName: "OpenTelemetry Collector",
-					DataSourceGroup:       "Telemetry",
+					DataSourceDisplayName: "OpenTelemetry",
+					DataSourceGroup:       "OpenTelemetry",
 				}
 
 				// Log the payload structure that will be sent to LogicMonitor
@@ -80,12 +80,20 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 					"dataSource": dsInput.DataSourceName,
 					"dataSourceDisplayName": dsInput.DataSourceDisplayName,
 					"dataSourceGroup": dsInput.DataSourceGroup,
-					"metric": map[string]interface{}{
-						"name": metric.Name(),
-						"type": metric.Type().String(),
-						"unit": metric.Unit(),
-						"description": metric.Description(),
-						"dataPointCount": getMetricDataPointCount(metric),
+					"instances": []map[string]interface{}{
+						{
+							"instanceName": metric.Name(),
+							"instanceDisplayName": metric.Name(),
+							"instanceProperties": metric.Type().String(),
+							"dataPoints": []map[string]interface{}{
+								{
+									"dataPointName": metric.Name(),
+									"dataPointType": metric.Type().String(),
+									"dataPointAggregationType": metric.Unit(),
+									"values": metric.Description(),
+								},
+							},
+						},
 					},
 				}
 				
