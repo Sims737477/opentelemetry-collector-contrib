@@ -197,7 +197,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 	}
 	
 	// Create instance input from attributes
-	instanceName := getInstanceName(attributes)
+	instanceName := metricName  // Use metric name as instance name
 	instInput := model.InstanceInput{
 		InstanceName:       sanitizeName(instanceName),
 		InstanceProperties: convertAttributes(attributes),
@@ -379,15 +379,6 @@ func getResourceID(attrs pcommon.Map) map[string]string {
 	return resourceID
 }
 
-func getInstanceName(attrs pcommon.Map) string {
-	if name, exists := attrs.Get("instance"); exists {
-		return name.Str()
-	}
-	if name, exists := attrs.Get("endpoint"); exists {
-		return name.Str()
-	}
-	return "default"
-}
 
 func convertAttributes(attrs pcommon.Map) map[string]string {
 	return lmutils.ConvertAndNormalizeAttributesToStrings(attrs)
