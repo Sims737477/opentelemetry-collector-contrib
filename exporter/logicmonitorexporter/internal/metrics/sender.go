@@ -71,6 +71,26 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 					DataSourceDisplayName: "OpenTelemetry Collector",
 					DataSourceGroup:       "Telemetry",
 				}
+
+				// Log the payload structure that will be sent to LogicMonitor
+				payloadPreview := map[string]interface{}{
+					"resourceName": resourceName,
+					"resourceIds": resourceID,
+					"resourceProperties": resourceProps,
+					"dataSource": dsInput.DataSourceName,
+					"dataSourceDisplayName": dsInput.DataSourceDisplayName,
+					"dataSourceGroup": dsInput.DataSourceGroup,
+					"metric": map[string]interface{}{
+						"name": metric.Name(),
+						"type": metric.Type().String(),
+						"unit": metric.Unit(),
+						"description": metric.Description(),
+						"dataPointCount": getMetricDataPointCount(metric),
+					},
+				}
+				
+				s.logger.Debug("Sending metric data - LogicMonitor payload preview",
+					zap.Any("payload_structure", payloadPreview))
 				
 				// Process different metric types
 				var err error
@@ -198,6 +218,34 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		DataPointAggregationType: "none",
 		Value:                    map[string]string{timestampStr: strconv.FormatFloat(value, 'f', -1, 64)},
 	}
+	
+	// Log the complete LogicMonitor API payload structure
+	completePayload := map[string]interface{}{
+		"resourceName": resourceName,
+		"resourceIds": resourceID,
+		"resourceProperties": resourceProps,
+		"dataSource": dsInput.DataSourceName,
+		"dataSourceDisplayName": dsInput.DataSourceDisplayName,
+		"dataSourceGroup": dsInput.DataSourceGroup,
+		"instances": []map[string]interface{}{
+			{
+				"instanceName": instInput.InstanceName,
+				"instanceDisplayName": instInput.InstanceName,
+				"instanceProperties": instInput.InstanceProperties,
+				"dataPoints": []map[string]interface{}{
+					{
+						"dataPointName": dpInput.DataPointName,
+						"dataPointType": dpInput.DataPointType,
+						"dataPointAggregationType": dpInput.DataPointAggregationType,
+						"values": dpInput.Value,
+					},
+				},
+			},
+		},
+	}
+	
+	s.logger.Debug("Sending datapoint - Complete LogicMonitor API payload",
+		zap.Any("logicmonitor_payload", completePayload))
 	
 	// Send to LogicMonitor
 	ingestResponse, err := s.metricIngestClient.SendMetrics(ctx, rInput, dsInput, instInput, dpInput)
@@ -356,6 +404,24 @@ func convertAttributes(attrs pcommon.Map) map[string]string {
 		return true
 	})
 	return result
+}
+
+// Helper function to get data point count for different metric types
+func getMetricDataPointCount(metric pmetric.Metric) int {
+	switch metric.Type() {
+	case pmetric.MetricTypeGauge:
+		return metric.Gauge().DataPoints().Len()
+	case pmetric.MetricTypeSum:
+		return metric.Sum().DataPoints().Len()
+	case pmetric.MetricTypeHistogram:
+		return metric.Histogram().DataPoints().Len()
+	case pmetric.MetricTypeSummary:
+		return metric.Summary().DataPoints().Len()
+	case pmetric.MetricTypeExponentialHistogram:
+		return metric.ExponentialHistogram().DataPoints().Len()
+	default:
+		return 0
+	}
 }
 
 // Does the 'code' indicate a permanent error

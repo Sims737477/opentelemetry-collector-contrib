@@ -33,4 +33,4 @@ providers:
 
 replaces:
     # custom logicmonitor exporter with metric support
-    - github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter => github.com/monitoringartist/opentelemetry-collector-contrib/exporter/logicmonitorexporter v0.0.0-20250920221035-b2cc5f589b2f
+    - github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter => github.com/monitoringartist/opentelemetry-collector-contrib/exporter/logicmonitorexporter v0.135.0-lm5
