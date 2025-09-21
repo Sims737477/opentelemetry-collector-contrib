@@ -178,12 +178,22 @@ func (s *Sender) processSummary(ctx context.Context, resourceName string, resour
 }
 
 func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dsInput model.DatasourceInput, metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) error {
+	// Merge resourceProps with resourceID
+	mergedResourceID := make(map[string]string)
+	// First copy resourceID
+	for k, v := range resourceID {
+		mergedResourceID[k] = v
+	}
+	// Then merge resourceProps (will overwrite any duplicate keys)
+	for k, v := range resourceProps {
+		mergedResourceID[k] = v
+	}
+	
 	// Create resource input
 	rInput := model.ResourceInput{
-		ResourceName:       resourceName,
-		ResourceID:         resourceID,
-		ResourceProperties: resourceProps,
-		IsCreate: 			true,
+		ResourceName: resourceName,
+		ResourceID:   mergedResourceID,
+		IsCreate:     true,
 	}
 	
 	// Create instance input from attributes
@@ -205,8 +215,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 	// Log the complete LogicMonitor API payload structure
 	completePayload := map[string]interface{}{
 		"resourceName": resourceName,
-		"resourceIds": resourceID,
-		"resourceProperties": resourceProps,
+		"resourceIds": mergedResourceID,
 		"dataSource": dsInput.DataSourceName,
 		"dataSourceDisplayName": dsInput.DataSourceDisplayName,
 		"dataSourceGroup": dsInput.DataSourceGroup,
