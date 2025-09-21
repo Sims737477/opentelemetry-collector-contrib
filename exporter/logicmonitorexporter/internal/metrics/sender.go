@@ -18,6 +18,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
+
+	lmutils "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter/internal/utils"
 )
 
 type Sender struct {
@@ -379,12 +381,7 @@ func getInstanceName(attrs pcommon.Map) string {
 }
 
 func convertAttributes(attrs pcommon.Map) map[string]string {
-	result := make(map[string]string)
-	attrs.Range(func(k string, v pcommon.Value) bool {
-		result[k] = v.AsString()
-		return true
-	})
-	return result
+	return lmutils.ConvertAndNormalizeAttributesToStrings(attrs)
 }
 
 // Helper function to get data point count for different metric types
