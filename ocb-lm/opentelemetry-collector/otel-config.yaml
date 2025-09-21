@@ -65,9 +65,10 @@ service:
             exporter:
               otlp:
                 protocol: http/protobuf
-                endpoint: http://prometheus:9090/api/v1/otlp
+                endpoint: http://prometheus:9090/api/v1/otlp/v1/metrics
     logs:
       level: debug
+      disable_stacktrace: true
   pipelines:
     metrics:
       receivers: [prometheus]

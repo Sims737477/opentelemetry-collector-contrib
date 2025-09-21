@@ -225,8 +225,8 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		},
 	}
 	
-	s.logger.Debug("Sending datapoint - LogicMonitor API payload",
-		zap.Any("logicmonitor_payload", completePayload))
+	s.logger.Debug("Sending metric data",
+		zap.Any("body", completePayload))
 	
 	// Send to LogicMonitor
 	ingestResponse, err := s.metricIngestClient.SendMetrics(ctx, rInput, dsInput, instInput, dpInput)
