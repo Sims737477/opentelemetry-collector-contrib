@@ -181,6 +181,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		ResourceName:       resourceName,
 		ResourceID:         resourceID,
 		ResourceProperties: resourceProps,
+		IsCreate: 			true,
 	}
 	
 	// Create instance input from attributes
