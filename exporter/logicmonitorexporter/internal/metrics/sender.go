@@ -252,7 +252,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 func sanitizeName(name string) string {
 	// LogicMonitor datapoint names cannot contain hyphens and some special characters
 	// Replace hyphens with underscores and remove other invalid characters
-	re := regexp.MustCompile(`[^a-zA-Z0-9_.]`)
+	re := regexp.MustCompile(`[^a-zA-Z0-9_]`)
 	sanitized := re.ReplaceAllString(name, "_")
 	sanitized = strings.ReplaceAll(sanitized, "-", "_")
 	
