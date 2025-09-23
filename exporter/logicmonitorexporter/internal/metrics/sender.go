@@ -70,8 +70,7 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 				// Create datasource input with custom DataSourceName based on metric name
 				dataSourceName := generateDataSourceName(metric.Name())
 				dsInput := model.DatasourceInput{
-					DataSourceName:  dataSourceName,
-					DataSourceGroup: "PushMetrics",
+					DataSourceName: dataSourceName,
 				}
 
 				// Process different metric types
