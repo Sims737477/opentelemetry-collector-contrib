@@ -10,7 +10,7 @@ receivers:
       #   scrape_interval: 10s
       #   static_configs:
       #   - targets: ['127.0.0.1:8888']
-      - job_name: grafana-metrics6
+      - job_name: grafana-metrics7
         scrape_interval: 10s
         static_configs:
         - targets: ['grafana:3000']
@@ -52,7 +52,7 @@ exporters:
       access_id: "${env:LM_ACCESS_ID}"
       access_key: "${env:LM_ACCESS_KEY}"
     metrics:
-      batching_interval: 200ms
+      batching_interval: 0
       batching_rate_limit: 100
   otlphttp/prometheus:
     endpoint: http://prometheus:9090/api/v1/otlp
@@ -93,7 +93,7 @@ service:
   pipelines:
     metrics:
       receivers: [prometheus]
-      processors: [batch]
+      processors: []
       exporters: [logicmonitor, otlphttp/prometheus]
     traces:
       receivers: [otlp]

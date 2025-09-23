@@ -53,7 +53,7 @@ func (e *metricsExporter) start(ctx context.Context, host component.Host) error 
 	}
 
 	// Override with user configuration if provided
-	if e.config.Metrics.BatchingInterval > 0 {
+	if e.config.Metrics.BatchingInterval > -1 {
 		batchingConfig.Interval = e.config.Metrics.BatchingInterval
 	}
 	if e.config.Metrics.BatchingRateLimit > 0 {
