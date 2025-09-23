@@ -23,21 +23,12 @@ import (
 
 // newTestSender creates a sender with batching disabled for testing
 func newTestSender(ctx context.Context, endpoint string, client *http.Client, authParams utils.AuthParams, logger *zap.Logger) (*Sender, error) {
-	options := []lmsdkmetrics.Option{
-		lmsdkmetrics.WithMetricBatchingDisabled(), // Disable batching for tests
-		lmsdkmetrics.WithAuthentication(authParams),
-		lmsdkmetrics.WithHTTPClient(client),
-		lmsdkmetrics.WithEndpoint(endpoint),
+	// Disable batching for tests
+	batchingConfig := BatchingConfig{
+		Interval:  0, // 0 disables batching
+		RateLimit: 0, // 0 disables rate limiting
 	}
-
-	metricIngestClient, err := lmsdkmetrics.NewLMMetricIngest(ctx, options...)
-	if err != nil {
-		return nil, err
-	}
-	return &Sender{
-		logger:             logger,
-		metricIngestClient: metricIngestClient,
-	}, nil
+	return NewSender(ctx, endpoint, client, authParams, batchingConfig, logger)
 }
 
 func TestSendMetrics(t *testing.T) {
@@ -136,7 +127,11 @@ func TestSendMetricsWithBatching(t *testing.T) {
 		defer cancel()
 
 		// Use the production NewSender which has batching enabled
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		batchingConfig := BatchingConfig{
+			Interval:  200 * time.Millisecond, // 200ms batching interval
+			RateLimit: 100,                    // 100 requests per second
+		}
+		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, batchingConfig, zap.NewNop())
 		assert.NoError(t, err)
 
 		// Send multiple metrics

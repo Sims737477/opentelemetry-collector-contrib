@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
@@ -29,6 +30,8 @@ type Config struct {
 	APIToken APIToken `mapstructure:"api_token"`
 	// Logs defines the Logs exporter specific configuration
 	Logs LogsConfig `mapstructure:"logs"`
+	// Metrics defines the Metrics exporter specific configuration
+	Metrics MetricsConfig `mapstructure:"metrics"`
 }
 
 type APIToken struct {
@@ -60,6 +63,18 @@ func (mop *MappingOperation) UnmarshalText(in []byte) error {
 type LogsConfig struct {
 	// Operation to be performed for resource mapping. Valid values are `and`, `or`.
 	ResourceMappingOperation MappingOperation `mapstructure:"resource_mapping_op"`
+	// prevent unkeyed literal initialization
+	_ struct{}
+}
+
+// MetricsConfig defines the metrics exporter specific configuration options
+type MetricsConfig struct {
+	// BatchingInterval specifies the time to wait before sending a batch of metrics.
+	// Default is 200ms. Set to 0 to disable batching.
+	BatchingInterval time.Duration `mapstructure:"batching_interval"`
+	// BatchingRateLimit specifies the maximum number of requests per second.
+	// Default is 100. Set to 0 to disable rate limiting.
+	BatchingRateLimit int `mapstructure:"batching_rate_limit"`
 	// prevent unkeyed literal initialization
 	_ struct{}
 }

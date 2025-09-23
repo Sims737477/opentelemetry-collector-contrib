@@ -28,15 +28,31 @@ type Sender struct {
 	metricIngestClient *lmsdkmetrics.LMMetricIngest
 }
 
+// BatchingConfig holds the batching configuration parameters
+type BatchingConfig struct {
+	Interval  time.Duration
+	RateLimit int
+}
+
 // NewSender creates a new Sender
-func NewSender(ctx context.Context, endpoint string, client *http.Client, authParams utils.AuthParams, logger *zap.Logger) (*Sender, error) {
+func NewSender(ctx context.Context, endpoint string, client *http.Client, authParams utils.AuthParams, batchingConfig BatchingConfig, logger *zap.Logger) (*Sender, error) {
 	options := []lmsdkmetrics.Option{
-		//lmsdkmetrics.WithMetricBatchingDisabled(),
-		lmsdkmetrics.WithMetricBatchingInterval(1 * time.Second),
-		lmsdkmetrics.WithRateLimit(200),
 		lmsdkmetrics.WithAuthentication(authParams),
 		lmsdkmetrics.WithHTTPClient(client),
 		lmsdkmetrics.WithEndpoint(endpoint),
+	}
+
+	// Configure batching based on provided config
+	if batchingConfig.Interval > 0 {
+		options = append(options, lmsdkmetrics.WithMetricBatchingInterval(batchingConfig.Interval))
+	} else {
+		// If interval is 0, disable batching
+		options = append(options, lmsdkmetrics.WithMetricBatchingDisabled())
+	}
+
+	// Configure rate limiting if specified
+	if batchingConfig.RateLimit > 0 {
+		options = append(options, lmsdkmetrics.WithRateLimit(batchingConfig.RateLimit))
 	}
 
 	metricIngestClient, err := lmsdkmetrics.NewLMMetricIngest(ctx, options...)

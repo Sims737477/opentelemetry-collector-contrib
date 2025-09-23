@@ -7,6 +7,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -140,6 +141,24 @@ func TestLoadConfig(t *testing.T) {
 				},
 				Logs: LogsConfig{
 					ResourceMappingOperation: "or",
+				},
+			},
+		},
+		{
+			id: component.NewIDWithName(metadata.Type, "metrics-config"),
+			expected: &Config{
+				BackOffConfig: configretry.NewDefaultBackOffConfig(),
+				QueueSettings: exporterhelper.NewDefaultQueueConfig(),
+				ClientConfig: confighttp.ClientConfig{
+					Endpoint: "https://company.logicmonitor.com/rest",
+				},
+				APIToken: APIToken{
+					AccessID:  "accessid",
+					AccessKey: "accesskey",
+				},
+				Metrics: MetricsConfig{
+					BatchingInterval:  500 * time.Millisecond,
+					BatchingRateLimit: 500,
 				},
 			},
 		},

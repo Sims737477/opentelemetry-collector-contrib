@@ -21,3 +21,12 @@ logicmonitor/resource-mapping-op:
   endpoint: https://company.logicmonitor.com/rest
   headers:
     Authorization: Bearer <token>
+# The following entry demonstrates how to configure metrics batching settings.
+logicmonitor/metrics-config:
+  endpoint: https://company.logicmonitor.com/rest
+  api_token:
+    access_id: "accessid"
+    access_key: "accesskey"
+  metrics:
+    batching_interval: 200ms
+    batching_rate_limit: 100
