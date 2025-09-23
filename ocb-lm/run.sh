@@ -1,1 +1,3 @@
-docker run --rm -e LM_COMPANY=aaa -e LM_ACCESS_ID=aaa -e LM_ACCESS_KEY=aaa -t x
+docker rm -f $(docker ps -aq)
+docker compose up -d
+docker logs -f opentelemetry-collector

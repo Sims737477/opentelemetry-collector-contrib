@@ -228,7 +228,7 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 						"dataPointName":            dpInput.DataPointName,
 						"dataPointType":            dpInput.DataPointType,
 						"dataPointAggregationType": "none",
-						"values":                   dpInput.Value,
+						"values":                   map[string]interface{}{timestampStr: value},
 					},
 				},
 			},
