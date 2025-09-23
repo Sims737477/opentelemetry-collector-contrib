@@ -221,7 +221,6 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		"instances": []map[string]interface{}{
 			{
 				"instanceName":        instInput.InstanceName,
-				"instanceDisplayName": instInput.InstanceName,
 				"instanceProperties":  instInput.InstanceProperties,
 				"dataPoints": []map[string]interface{}{
 					{
