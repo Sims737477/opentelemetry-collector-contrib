@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	lmsdkmetrics "github.com/logicmonitor/lm-data-sdk-go/api/metrics"
 	"github.com/logicmonitor/lm-data-sdk-go/model"
@@ -30,7 +31,9 @@ type Sender struct {
 // NewSender creates a new Sender
 func NewSender(ctx context.Context, endpoint string, client *http.Client, authParams utils.AuthParams, logger *zap.Logger) (*Sender, error) {
 	options := []lmsdkmetrics.Option{
-		lmsdkmetrics.WithMetricBatchingDisabled(),
+		//lmsdkmetrics.WithMetricBatchingDisabled(),
+		lmsdkmetrics.WithMetricBatchingInterval(1 * time.Second),
+		lmsdkmetrics.WithRateLimit(200),
 		lmsdkmetrics.WithAuthentication(authParams),
 		lmsdkmetrics.WithHTTPClient(client),
 		lmsdkmetrics.WithEndpoint(endpoint),

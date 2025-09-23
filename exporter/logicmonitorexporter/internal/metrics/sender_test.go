@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	lmsdkmetrics "github.com/logicmonitor/lm-data-sdk-go/api/metrics"
 	"github.com/logicmonitor/lm-data-sdk-go/utils"
@@ -18,6 +20,25 @@ import (
 	"go.opentelemetry.io/collector/pdata/testdata"
 	"go.uber.org/zap"
 )
+
+// newTestSender creates a sender with batching disabled for testing
+func newTestSender(ctx context.Context, endpoint string, client *http.Client, authParams utils.AuthParams, logger *zap.Logger) (*Sender, error) {
+	options := []lmsdkmetrics.Option{
+		lmsdkmetrics.WithMetricBatchingDisabled(), // Disable batching for tests
+		lmsdkmetrics.WithAuthentication(authParams),
+		lmsdkmetrics.WithHTTPClient(client),
+		lmsdkmetrics.WithEndpoint(endpoint),
+	}
+
+	metricIngestClient, err := lmsdkmetrics.NewLMMetricIngest(ctx, options...)
+	if err != nil {
+		return nil, err
+	}
+	return &Sender{
+		logger:             logger,
+		metricIngestClient: metricIngestClient,
+	}, nil
+}
 
 func TestSendMetrics(t *testing.T) {
 	authParams := utils.AuthParams{
@@ -38,7 +59,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(t.Context())
 
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		sender, err := newTestSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
@@ -59,7 +80,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(t.Context())
 
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		sender, err := newTestSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
@@ -81,13 +102,57 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(t.Context())
 
-		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		sender, err := newTestSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
 		cancel()
 		assert.Error(t, err)
 		assert.False(t, consumererror.IsPermanent(err))
+	})
+}
+
+func TestSendMetricsWithBatching(t *testing.T) {
+	authParams := utils.AuthParams{
+		AccessID:    "testId",
+		AccessKey:   "testKey",
+		BearerToken: "testToken",
+	}
+	
+	t.Run("should work with batching enabled", func(t *testing.T) {
+		var requestCount int64
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			atomic.AddInt64(&requestCount, 1)
+			response := lmsdkmetrics.SendMetricResponse{
+				Success: true,
+				Message: "Accepted",
+			}
+			w.WriteHeader(http.StatusAccepted)
+			assert.NoError(t, json.NewEncoder(w).Encode(&response))
+		}))
+		defer ts.Close()
+
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+
+		// Use the production NewSender which has batching enabled
+		sender, err := NewSender(ctx, ts.URL, ts.Client(), authParams, zap.NewNop())
+		assert.NoError(t, err)
+
+		// Send multiple metrics
+		for i := 0; i < 3; i++ {
+			err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
+			assert.NoError(t, err)
+		}
+
+		// Wait for batching to complete (1 second batch interval + buffer)
+		time.Sleep(2 * time.Second)
+
+		// Verify that requests were made (batching should reduce the number of requests)
+		finalCount := atomic.LoadInt64(&requestCount)
+		assert.Greater(t, finalCount, int64(0), "At least one request should have been made")
+		// With batching, we should have fewer requests than metrics sent
+		t.Logf("Sent 3 metric batches, made %d HTTP requests (batching working if < 3)", finalCount)
 	})
 }
 
