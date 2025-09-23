@@ -69,9 +69,9 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 				
 				// Create datasource input
 				dsInput := model.DatasourceInput{
-					DataSourceName:        "OpenTelemetry",
-					DataSourceDisplayName: "OpenTelemetry",
-					DataSourceGroup:       "OpenTelemetry",
+					DataSourceName:        "PushMetrics",
+					DataSourceDisplayName: "PushMetrics",
+					DataSourceGroup:       "PushMetrics",
 				}
 				
 				// Process different metric types
