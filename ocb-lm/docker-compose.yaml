@@ -31,7 +31,7 @@ services:
 
   opentelemetry-collector:
     container_name: opentelemetry-collector
-    image: x
+    image: jangaraj/opentelemetry-collector-lm:latest
     volumes:
       - ./opentelemetry-collector/otel-config.yaml:/etc/otel-config.yaml
     command:

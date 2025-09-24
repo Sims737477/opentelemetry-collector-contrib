@@ -1,1 +1,1 @@
-docker build -t x .
+docker build -t jangaraj/opentelemetry-collector-lm:latest .
