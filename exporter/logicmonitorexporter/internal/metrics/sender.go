@@ -6,6 +6,7 @@ package metrics // import "github.com/open-telemetry/opentelemetry-collector-con
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
@@ -404,6 +406,18 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 	timestampMillis := timestamp.AsTime().UnixMilli()
 	resp, err := s.metricsClient.SendMetrics(ctx, payload, timestampMillis)
 	if err != nil {
+		// Check if this is a client error (4xx) - these should not be retried
+		var httpErr *lmutils.HTTPError
+		if errors.As(err, &httpErr) && httpErr.IsClientError() {
+			s.logger.Warn("Dropping metric due to client error (will not retry)",
+				zap.Int("status_code", httpErr.StatusCode),
+				zap.String("message", httpErr.Message),
+				zap.String("resource", resourceName),
+				zap.String("datasource", dataSourceName))
+			// Return permanent error to prevent retries
+			return consumererror.NewPermanent(fmt.Errorf("failed to send metrics: %w", err))
+		}
+		// Server errors (5xx) or network errors are retryable
 		return fmt.Errorf("failed to send metrics: %w", err)
 	}
 
@@ -505,6 +519,18 @@ func (s *Sender) flushBatch(ctx context.Context, batch *metricBatch) error {
 	// Send to LogicMonitor with the batch timestamp from first metric
 	resp, err := s.metricsClient.SendMetrics(ctx, payload, timestampMillis)
 	if err != nil {
+		// Check if this is a client error (4xx) - these should not be retried
+		var httpErr *lmutils.HTTPError
+		if errors.As(err, &httpErr) && httpErr.IsClientError() {
+			s.logger.Warn("Dropping metrics due to client error (will not retry)",
+				zap.Int("status_code", httpErr.StatusCode),
+				zap.String("message", httpErr.Message),
+				zap.String("resource", batch.resourceName),
+				zap.String("datasource", batch.dataSourceName))
+			// Return permanent error to prevent retries
+			return consumererror.NewPermanent(fmt.Errorf("failed to send batched metrics: %w", err))
+		}
+		// Server errors (5xx) or network errors are retryable
 		return fmt.Errorf("failed to send batched metrics: %w", err)
 	}
 	

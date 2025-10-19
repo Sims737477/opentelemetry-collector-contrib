@@ -23,6 +23,22 @@ const (
 	metricsIngestPath = "/metric/ingest"
 )
 
+// HTTPError represents an HTTP error with status code
+type HTTPError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("HTTP %d: %s", e.StatusCode, e.Message)
+}
+
+// IsClientError returns true if the error is a 4xx client error (non-retryable)
+// Note: 429 (Too Many Requests) is excluded as it should be retried
+func (e *HTTPError) IsClientError() bool {
+	return e.StatusCode >= 400 && e.StatusCode < 500 && e.StatusCode != http.StatusTooManyRequests
+}
+
 // MetricsClient is a client for sending metrics to LogicMonitor Push Metrics API
 type MetricsClient struct {
 	endpoint           string
@@ -166,7 +182,11 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload,
 			zap.String("message", metricResp.Message),
 			zap.Any("errors", metricResp.Errors))
 		
-		return &metricResp, fmt.Errorf("API returned status %d: %s", resp.StatusCode, metricResp.Message)
+		// Return HTTPError to allow caller to detect client errors (4xx) vs server errors (5xx)
+		return &metricResp, &HTTPError{
+			StatusCode: resp.StatusCode,
+			Message:    metricResp.Message,
+		}
 	}
 
 	metricResp.Success = true

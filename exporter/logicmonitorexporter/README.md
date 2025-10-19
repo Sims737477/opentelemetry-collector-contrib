@@ -419,13 +419,44 @@ exporters:
       max_interval: 30s
 ```
 
-### Authentication Errors (401)
+### Client Errors (4xx) - Non-Retryable
 
-If you see 401 errors after following this guide:
-1. Verify API token permissions in LogicMonitor portal
-2. Ensure token has "Manage Resources" and "Manage DataSources" permissions
-3. Check if the API token is expired
-4. Verify the company subdomain is correct in the endpoint URL
+**Behavior:** The exporter automatically drops metrics and **does not retry** when receiving 4xx client errors (400-499) from the LogicMonitor API. These errors indicate problems with the request itself that cannot be fixed by retrying.
+
+**Common 4xx Errors:**
+
+**HTTP 400 Bad Request:**
+```
+error: failed to send batched metrics: API returned status 400
+```
+- **Causes:** Invalid payload format, missing required fields, malformed JSON
+- **Action:** Check logs for specific error details, verify metric format
+- **Not retried:** Data is dropped immediately
+
+**HTTP 401 Unauthorized:**
+```
+error: API returned status 401: Unauthorized
+```
+- **Causes:** Invalid API credentials, expired token, insufficient permissions
+- **Actions:**
+  1. Verify API token permissions in LogicMonitor portal
+  2. Ensure token has "Manage Resources" and "Manage DataSources" permissions
+  3. Check if the API token is expired
+  4. Verify the company subdomain is correct in the endpoint URL
+- **Not retried:** Data is dropped immediately
+
+**HTTP 403 Forbidden:**
+- **Cause:** API token lacks required permissions
+- **Action:** Update token permissions in LogicMonitor
+- **Not retried:** Data is dropped immediately
+
+**HTTP 429 Too Many Requests:**
+- **Cause:** Rate limit exceeded
+- **Action:** Reduce batch frequency or increase `batch_timeout`
+- **Note:** This IS retried (unlike other 4xx errors) via the retry mechanism
+
+**Server Errors (5xx) - Retryable:**
+Server errors (500-599) and network errors are automatically retried using the configured retry policy.
 
 ### High Memory Usage
 
