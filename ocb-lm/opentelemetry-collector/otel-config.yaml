@@ -64,7 +64,7 @@ exporters:
     # max_idle_conns_per_host: 0      # Maximum idle connections per host (default: unlimited)
     # max_conns_per_host: 0           # Maximum connections per host (default: unlimited)
     # idle_conn_timeout: 90s          # Idle connection timeout (default: 90s)
-    # compression: none               # Compression algorithm: none, gzip, snappy, zstd (default: none)
+    compression: gzip                # Compression algorithm: none, gzip, snappy, zstd (default: none)
     
     # TLS configuration
     # tls:
@@ -108,7 +108,7 @@ service:
   telemetry:
     resource:
       service.name: grafana-opentelemetry
-      author: monitoriginartist
+      # author: monitoriginartist
     metrics:
       level: detailed
       readers:

@@ -508,13 +508,13 @@ func (s *Sender) flushBatch(ctx context.Context, batch *metricBatch) error {
 		}
 	}
 	
-	s.logger.Debug("Sending batched metrics",
-		zap.String("resourceName", batch.resourceName),
-		zap.String("dataSource", batch.dataSourceName),
-		zap.Int("instanceCount", batch.instanceCount),
-		zap.Int("estimatedSize", actualSize),
-		zap.String("timestampStr", batch.timestampStr),
-		zap.Int64("timestampMillis", timestampMillis))
+	// s.logger.Debug("Sending batched metrics",
+	// 	zap.String("resourceName", batch.resourceName),
+	// 	zap.String("dataSource", batch.dataSourceName),
+	// 	zap.Int("instanceCount", batch.instanceCount),
+	// 	zap.Int("estimatedSize", actualSize),
+	// 	zap.String("timestampStr", batch.timestampStr),
+	// 	zap.Int64("timestampMillis", timestampMillis))
 	
 	// Send to LogicMonitor with the batch timestamp from first metric
 	resp, err := s.metricsClient.SendMetrics(ctx, payload, timestampMillis)
