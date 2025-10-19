@@ -110,10 +110,10 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload,
 	}
 
 	// Generate authentication signature using provided timestamp
-	// Note: The path for signature includes the query string
-	// The timestamp should match the metric data timestamps for proper authentication
-	pathWithQuery := metricsIngestPath + queryString
-	auth := c.generateAuth(http.MethodPost, pathWithQuery, string(body), timestamp)
+	// IMPORTANT: Per LogicMonitor docs, the signature uses ONLY the base path without query params
+	// The query string is added to the URL but NOT included in the signature calculation
+	// See: https://www.logicmonitor.com/support/push-metrics/ingesting-metrics-with-the-push-metrics-rest-api
+	auth := c.generateAuth(http.MethodPost, metricsIngestPath, string(body), timestamp)
 
 	// Debug logging for authentication
 	c.logger.Debug("LogicMonitor API Request",
@@ -186,21 +186,17 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload,
 // generateAuth generates LMv1 authentication signature
 // Format: LMv1 <AccessId>:<Signature>:<Timestamp>
 // Signature = Base64(HMAC-SHA256(Method + Timestamp + Body + Path, AccessKey))
-// Note: timestamp parameter is in milliseconds but signature uses seconds to match metric values
+// IMPORTANT: Per LogicMonitor Python example, timestamp is in MILLISECONDS for signature
 func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64) string {
-	// Convert timestamp from milliseconds to seconds
-	// This MUST match the timestamp format used in metric values (seconds)
-	timestampSeconds := timestamp / 1000
-	
-	// Create string to sign: Method + Timestamp(seconds) + Body + Path
-	stringToSign := method + strconv.FormatInt(timestampSeconds, 10) + body + path
+	// Create string to sign: Method + Timestamp(milliseconds) + Body + Path
+	// The timestamp parameter is already in milliseconds, use it directly
+	stringToSign := method + strconv.FormatInt(timestamp, 10) + body + path
 
 	// Debug log the string to sign components
 	c.logger.Debug("Generating LMv1 signature",
 		zap.String("method", method),
 		zap.String("path", path),
 		zap.Int64("timestamp_millis", timestamp),
-		zap.Int64("timestamp_seconds", timestampSeconds),
 		zap.Int("body_length", len(body)),
 		zap.String("body", body),
 		zap.String("access_id", c.accessID),
@@ -220,7 +216,7 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 		zap.String("signature", signature),
 		zap.Int("signature_length", len(signature)))
 
-	// Return formatted auth header using seconds timestamp
-	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestampSeconds)
+	// Return formatted auth header using milliseconds timestamp
+	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestamp)
 }
 
