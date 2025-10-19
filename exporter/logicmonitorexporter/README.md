@@ -74,6 +74,10 @@ exporters:
     # Logs Configuration
     logs:
       resource_mapping_op: "and"      # Resource mapping operation: "and" or "or" (default: "and")
+    
+    # Metrics Configuration
+    metrics:
+      auto_create_resource: true      # Automatically create resources if they don't exist (default: true)
 ```
 
 ## Authentication
@@ -147,6 +151,41 @@ The exporter supports all OpenTelemetry metric types:
 - **Sum**: Maps to COUNTER (monotonic) or GAUGE (non-monotonic)
 - **Histogram**: Exports count and sum as separate metrics
 - **Summary**: Exports count and sum as separate metrics
+
+### Resource Auto-Creation
+
+By default, the exporter automatically creates resources in LogicMonitor if they don't exist (controlled by the `create=true` query parameter in the Push Metrics API). This is controlled via the `metrics.auto_create_resource` configuration option.
+
+**Default behavior (auto_create_resource: true):**
+```yaml
+exporters:
+  logicmonitor:
+    endpoint: https://company.logicmonitor.com/rest
+    api_token:
+      access_id: "your_access_id"
+      access_key: "your_access_key"
+    metrics:
+      auto_create_resource: true  # Resources are automatically created
+```
+
+When enabled, the API request includes `?create=true` query parameter, and this parameter is included in the LMv1 authentication signature calculation.
+
+**Manual resource management (auto_create_resource: false):**
+```yaml
+exporters:
+  logicmonitor:
+    endpoint: https://company.logicmonitor.com/rest
+    api_token:
+      access_id: "your_access_id"
+      access_key: "your_access_key"
+    metrics:
+      auto_create_resource: false  # Resources must exist before sending metrics
+```
+
+When disabled:
+- Resources must be pre-created in LogicMonitor before metrics can be sent
+- The API request does not include the `create` query parameter
+- Metrics for non-existent resources will be rejected by the API
 
 ## HTTP Client Configuration
 

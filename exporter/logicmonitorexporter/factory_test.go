@@ -28,6 +28,9 @@ func TestCreateDefaultConfig(t *testing.T) {
 	assert.Equal(t, &Config{
 		BackOffConfig: configretry.NewDefaultBackOffConfig(),
 		QueueSettings: expectedQueueSettings,
+		Metrics: MetricsConfig{
+			AutoCreateResource: true, // Default to auto-creating resources
+		},
 	}, cfg, "failed to create default config")
 
 	assert.NoError(t, componenttest.CheckConfigStruct(cfg))

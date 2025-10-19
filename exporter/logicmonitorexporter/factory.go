@@ -40,6 +40,9 @@ func createDefaultConfig() component.Config {
 	return &Config{
 		BackOffConfig: configretry.NewDefaultBackOffConfig(),
 		QueueSettings: queueSettings,
+		Metrics: MetricsConfig{
+			AutoCreateResource: true, // Default to auto-creating resources
+		},
 	}
 }
 

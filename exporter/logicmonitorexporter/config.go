@@ -29,11 +29,23 @@ type Config struct {
 	APIToken APIToken `mapstructure:"api_token"`
 	// Logs defines the Logs exporter specific configuration
 	Logs LogsConfig `mapstructure:"logs"`
+	// Metrics defines the Metrics exporter specific configuration
+	Metrics MetricsConfig `mapstructure:"metrics"`
 }
 
 type APIToken struct {
 	AccessID  string              `mapstructure:"access_id"`
 	AccessKey configopaque.String `mapstructure:"access_key"`
+	// prevent unkeyed literal initialization
+	_ struct{}
+}
+
+// MetricsConfig defines the metrics exporter specific configuration options
+type MetricsConfig struct {
+	// AutoCreateResource controls whether to automatically create resources if they don't exist
+	// Maps to the "create" query parameter in the Push Metrics API
+	// Default: true
+	AutoCreateResource bool `mapstructure:"auto_create_resource"`
 	// prevent unkeyed literal initialization
 	_ struct{}
 }

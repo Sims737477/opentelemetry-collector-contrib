@@ -25,11 +25,12 @@ const (
 
 // MetricsClient is a client for sending metrics to LogicMonitor Push Metrics API
 type MetricsClient struct {
-	endpoint  string
-	accessID  string
-	accessKey string
-	client    *http.Client
-	logger    *zap.Logger
+	endpoint           string
+	accessID           string
+	accessKey          string
+	autoCreateResource bool
+	client             *http.Client
+	logger             *zap.Logger
 }
 
 // MetricPayload represents the metric data to be sent to LogicMonitor
@@ -75,13 +76,14 @@ type MetricErrorDetail struct {
 }
 
 // NewMetricsClient creates a new metrics client
-func NewMetricsClient(endpoint, accessID, accessKey string, httpClient *http.Client, logger *zap.Logger) *MetricsClient {
+func NewMetricsClient(endpoint, accessID, accessKey string, autoCreateResource bool, httpClient *http.Client, logger *zap.Logger) *MetricsClient {
 	return &MetricsClient{
-		endpoint:  endpoint,
-		accessID:  accessID,
-		accessKey: accessKey,
-		client:    httpClient,
-		logger:    logger,
+		endpoint:           endpoint,
+		accessID:           accessID,
+		accessKey:          accessKey,
+		autoCreateResource: autoCreateResource,
+		client:             httpClient,
+		logger:             logger,
 	}
 }
 
@@ -93,16 +95,24 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 		return nil, fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	// Create HTTP request
-	url := c.endpoint + metricsIngestPath + "?create=true"
+	// Build query string if needed
+	queryString := ""
+	if c.autoCreateResource {
+		queryString = "?create=true"
+	}
+	
+	// Create HTTP request with query string
+	url := c.endpoint + metricsIngestPath + queryString
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Generate authentication signature
+	// Note: The path for signature includes the query string
 	timestamp := time.Now().UnixMilli()
-	auth := c.generateAuth(http.MethodPost, metricsIngestPath, string(body), timestamp)
+	pathWithQuery := metricsIngestPath + queryString
+	auth := c.generateAuth(http.MethodPost, pathWithQuery, string(body), timestamp)
 
 	// Debug logging for authentication
 	c.logger.Debug("LogicMonitor API Request",

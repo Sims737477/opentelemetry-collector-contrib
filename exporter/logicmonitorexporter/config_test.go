@@ -116,6 +116,9 @@ func TestLoadConfig(t *testing.T) {
 					AccessID:  "accessid",
 					AccessKey: "accesskey",
 				},
+				Metrics: MetricsConfig{
+					AutoCreateResource: true,
+				},
 			},
 		},
 		{
@@ -128,6 +131,9 @@ func TestLoadConfig(t *testing.T) {
 					Headers: map[string]configopaque.String{
 						"Authorization": "Bearer <token>",
 					},
+				},
+				Metrics: MetricsConfig{
+					AutoCreateResource: true,
 				},
 			},
 		},
@@ -144,6 +150,9 @@ func TestLoadConfig(t *testing.T) {
 				},
 				Logs: LogsConfig{
 					ResourceMappingOperation: "or",
+				},
+				Metrics: MetricsConfig{
+					AutoCreateResource: true,
 				},
 			},
 		},

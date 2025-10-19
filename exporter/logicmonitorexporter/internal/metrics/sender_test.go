@@ -32,7 +32,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx := context.Background()
 
-		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", zap.NewNop())
+		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
@@ -52,7 +52,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx := context.Background()
 
-		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", zap.NewNop())
+		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
@@ -72,7 +72,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx := context.Background()
 
-		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", zap.NewNop())
+		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))

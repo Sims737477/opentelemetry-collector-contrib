@@ -17,11 +17,12 @@ import (
 )
 
 func TestNewMetricsClient(t *testing.T) {
-	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", http.DefaultClient, zap.NewNop())
+	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", true, http.DefaultClient, zap.NewNop())
 	assert.NotNil(t, client)
 	assert.Equal(t, "https://test.logicmonitor.com", client.endpoint)
 	assert.Equal(t, "testID", client.accessID)
 	assert.Equal(t, "testKey", client.accessKey)
+	assert.True(t, client.autoCreateResource)
 }
 
 func TestSendMetrics_Success(t *testing.T) {
@@ -45,8 +46,8 @@ func TestSendMetrics_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create client
-	client := NewMetricsClient(server.URL, "testID", "testKey", server.Client(), zap.NewNop())
+	// Create client with autoCreateResource=true
+	client := NewMetricsClient(server.URL, "testID", "testKey", true, server.Client(), zap.NewNop())
 
 	// Create payload
 	payload := &MetricPayload{
@@ -99,8 +100,8 @@ func TestSendMetrics_Error(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create client
-	client := NewMetricsClient(server.URL, "testID", "testKey", server.Client(), zap.NewNop())
+	// Create client with autoCreateResource=true
+	client := NewMetricsClient(server.URL, "testID", "testKey", true, server.Client(), zap.NewNop())
 
 	// Create invalid payload
 	payload := &MetricPayload{
@@ -120,7 +121,7 @@ func TestSendMetrics_Error(t *testing.T) {
 }
 
 func TestGenerateAuth(t *testing.T) {
-	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", http.DefaultClient, zap.NewNop())
+	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", true, http.DefaultClient, zap.NewNop())
 	
 	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
 	auth := client.generateAuth("POST", "/metric/ingest", `{"test":"data"}`, timestamp)
@@ -133,6 +134,78 @@ func TestGenerateAuth(t *testing.T) {
 	// Verify it's deterministic
 	auth2 := client.generateAuth("POST", "/metric/ingest", `{"test":"data"}`, timestamp)
 	assert.Equal(t, auth, auth2)
+}
+
+func TestGenerateAuth_WithQueryString(t *testing.T) {
+	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", true, http.DefaultClient, zap.NewNop())
+	
+	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
+	
+	// Test with query string
+	authWithQuery := client.generateAuth("POST", "/metric/ingest?create=true", `{"test":"data"}`, timestamp)
+	
+	// Test without query string
+	authWithoutQuery := client.generateAuth("POST", "/metric/ingest", `{"test":"data"}`, timestamp)
+	
+	// They should be different
+	assert.NotEqual(t, authWithQuery, authWithoutQuery)
+	
+	// Both should have proper format
+	assert.Contains(t, authWithQuery, "LMv1")
+	assert.Contains(t, authWithoutQuery, "LMv1")
+}
+
+func TestSendMetrics_WithoutAutoCreate(t *testing.T) {
+	// Create test server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request does NOT have create query param
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/metric/ingest", r.URL.Path)
+		assert.Empty(t, r.URL.RawQuery) // Should be empty when autoCreateResource=false
+		
+		// Return success response
+		w.WriteHeader(http.StatusAccepted)
+		resp := MetricResponse{
+			Success: true,
+			Message: "Metric data accepted",
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	// Create client with autoCreateResource=false
+	client := NewMetricsClient(server.URL, "testID", "testKey", false, server.Client(), zap.NewNop())
+
+	// Create payload
+	payload := &MetricPayload{
+		ResourceName: "test-host",
+		ResourceIDs: map[string]string{
+			"system.displayname": "test-host",
+		},
+		DataSource: "TestDataSource",
+		Instances: []MetricInstance{
+			{
+				InstanceName: "test-instance",
+				DataPoints: []MetricDataPoint{
+					{
+						DataPointName: "test_metric",
+						DataPointType: "gauge",
+						Values: map[string]interface{}{
+							"1234567890": 42.0,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Send metrics
+	ctx := context.Background()
+	resp, err := client.SendMetrics(ctx, payload)
+
+	// Verify
+	require.NoError(t, err)
+	assert.True(t, resp.Success)
 }
 
 func TestMetricPayload_Marshal(t *testing.T) {
