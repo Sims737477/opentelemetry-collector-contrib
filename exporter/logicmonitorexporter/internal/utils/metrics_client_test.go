@@ -13,12 +13,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
 
 func TestNewMetricsClient(t *testing.T) {
-	client := NewMetricsClient("https://test.logicmonitor.com/rest", "testID", "testKey", http.DefaultClient)
+	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", http.DefaultClient, zap.NewNop())
 	assert.NotNil(t, client)
-	assert.Equal(t, "https://test.logicmonitor.com/rest", client.endpoint)
+	assert.Equal(t, "https://test.logicmonitor.com", client.endpoint)
 	assert.Equal(t, "testID", client.accessID)
 	assert.Equal(t, "testKey", client.accessKey)
 }
@@ -45,7 +46,7 @@ func TestSendMetrics_Success(t *testing.T) {
 	defer server.Close()
 
 	// Create client
-	client := NewMetricsClient(server.URL, "testID", "testKey", server.Client())
+	client := NewMetricsClient(server.URL, "testID", "testKey", server.Client(), zap.NewNop())
 
 	// Create payload
 	payload := &MetricPayload{
@@ -99,7 +100,7 @@ func TestSendMetrics_Error(t *testing.T) {
 	defer server.Close()
 
 	// Create client
-	client := NewMetricsClient(server.URL, "testID", "testKey", server.Client())
+	client := NewMetricsClient(server.URL, "testID", "testKey", server.Client(), zap.NewNop())
 
 	// Create invalid payload
 	payload := &MetricPayload{
@@ -119,7 +120,7 @@ func TestSendMetrics_Error(t *testing.T) {
 }
 
 func TestGenerateAuth(t *testing.T) {
-	client := NewMetricsClient("https://test.logicmonitor.com/rest", "testID", "testKey", http.DefaultClient)
+	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", http.DefaultClient, zap.NewNop())
 	
 	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
 	auth := client.generateAuth("POST", "/rest/metric/ingest", `{"test":"data"}`, timestamp)

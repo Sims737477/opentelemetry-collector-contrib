@@ -43,7 +43,7 @@ type metricBatch struct {
 
 // NewSender creates a new Sender
 func NewSender(endpoint string, client *http.Client, accessID, accessKey string, logger *zap.Logger) (*Sender, error) {
-	metricsClient := lmutils.NewMetricsClient(endpoint, accessID, accessKey, client)
+	metricsClient := lmutils.NewMetricsClient(endpoint, accessID, accessKey, client, logger)
 	
 	return &Sender{
 		logger:        logger,

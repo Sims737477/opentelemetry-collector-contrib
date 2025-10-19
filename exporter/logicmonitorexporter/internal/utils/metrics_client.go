@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -27,6 +29,7 @@ type MetricsClient struct {
 	accessID  string
 	accessKey string
 	client    *http.Client
+	logger    *zap.Logger
 }
 
 // MetricPayload represents the metric data to be sent to LogicMonitor
@@ -72,12 +75,13 @@ type MetricErrorDetail struct {
 }
 
 // NewMetricsClient creates a new metrics client
-func NewMetricsClient(endpoint, accessID, accessKey string, httpClient *http.Client) *MetricsClient {
+func NewMetricsClient(endpoint, accessID, accessKey string, httpClient *http.Client, logger *zap.Logger) *MetricsClient {
 	return &MetricsClient{
 		endpoint:  endpoint,
 		accessID:  accessID,
 		accessKey: accessKey,
 		client:    httpClient,
+		logger:    logger,
 	}
 }
 
@@ -100,6 +104,15 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 	timestamp := time.Now().UnixMilli()
 	auth := c.generateAuth(http.MethodPost, metricsIngestPath, string(body), timestamp)
 
+	// Debug logging for authentication
+	c.logger.Debug("LogicMonitor API Request",
+		zap.String("url", url),
+		zap.String("method", "POST"),
+		zap.Int("body_length", len(body)),
+		zap.Int64("timestamp", timestamp),
+		zap.String("access_id", c.accessID),
+		zap.String("auth_header", auth))
+
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", auth)
@@ -107,6 +120,9 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 	// Send request
 	resp, err := c.client.Do(req)
 	if err != nil {
+		c.logger.Error("Failed to send HTTP request",
+			zap.Error(err),
+			zap.String("url", url))
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
@@ -117,10 +133,21 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	// Log response details
+	c.logger.Debug("LogicMonitor API Response",
+		zap.Int("status_code", resp.StatusCode),
+		zap.String("status", resp.Status),
+		zap.Int("body_length", len(respBody)),
+		zap.String("response_body", string(respBody)))
+
 	// Parse response
 	var metricResp MetricResponse
 	if len(respBody) > 0 {
 		if err := json.Unmarshal(respBody, &metricResp); err != nil {
+			c.logger.Error("Failed to parse response",
+				zap.Error(err),
+				zap.Int("status_code", resp.StatusCode),
+				zap.String("response_body", string(respBody)))
 			return nil, fmt.Errorf("failed to parse response (status %d): %w, body: %s", resp.StatusCode, err, string(respBody))
 		}
 	}
@@ -131,6 +158,12 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 			metricResp.Message = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 		}
 		metricResp.Success = false
+		
+		c.logger.Error("LogicMonitor API returned error",
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("message", metricResp.Message),
+			zap.Any("errors", metricResp.Errors))
+		
 		return &metricResp, fmt.Errorf("API returned status %d: %s", resp.StatusCode, metricResp.Message)
 	}
 
@@ -145,10 +178,30 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 	// Create string to sign: Method + Timestamp + Body + Path
 	stringToSign := method + strconv.FormatInt(timestamp, 10) + body + path
 
+	// Debug log the string to sign (truncate body if too long)
+	bodyPreview := body
+	if len(bodyPreview) > 200 {
+		bodyPreview = bodyPreview[:200] + "...[truncated]"
+	}
+	
+	c.logger.Debug("Generating LMv1 signature",
+		zap.String("method", method),
+		zap.String("path", path),
+		zap.Int64("timestamp", timestamp),
+		zap.Int("body_length", len(body)),
+		zap.String("body_preview", bodyPreview),
+		zap.String("access_id", c.accessID),
+		zap.Int("access_key_length", len(c.accessKey)),
+		zap.Int("string_to_sign_length", len(stringToSign)))
+
 	// Generate HMAC SHA256 signature and base64 encode it
 	h := hmac.New(sha256.New, []byte(c.accessKey))
 	h.Write([]byte(stringToSign))
 	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+
+	c.logger.Debug("Generated signature",
+		zap.String("signature", signature),
+		zap.Int("signature_length", len(signature)))
 
 	// Return formatted auth header
 	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestamp)
