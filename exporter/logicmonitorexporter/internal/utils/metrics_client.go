@@ -140,14 +140,15 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 
 // generateAuth generates LMv1 authentication signature
 // Format: LMv1 <AccessId>:<Signature>:<Timestamp>
+// Signature = Base64(HMAC-SHA256(Method + Timestamp + Body + Path, AccessKey))
 func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64) string {
 	// Create string to sign: Method + Timestamp + Body + Path
 	stringToSign := method + strconv.FormatInt(timestamp, 10) + body + path
 
-	// Generate HMAC SHA256 signature
+	// Generate HMAC SHA256 signature and base64 encode it
 	h := hmac.New(sha256.New, []byte(c.accessKey))
 	h.Write([]byte(stringToSign))
-	signature := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%x", h.Sum(nil))))
+	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
 
 	// Return formatted auth header
 	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestamp)

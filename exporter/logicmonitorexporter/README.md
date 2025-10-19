@@ -11,7 +11,7 @@ The LogicMonitor exporter follows OpenTelemetry Collector configuration standard
 ```yaml
 exporters:
   logicmonitor:
-    endpoint: https://company.logicmonitor.com/rest
+    endpoint: https://company.logicmonitor.com
     api_token:
       access_id: "your_access_id"
       access_key: "your_access_key"
@@ -23,7 +23,7 @@ exporters:
 exporters:
   logicmonitor:
     # Required: LogicMonitor API endpoint
-    endpoint: https://company.logicmonitor.com/rest
+    endpoint: https://company.logicmonitor.com
     
     # Required: API authentication credentials
     api_token:
@@ -85,7 +85,7 @@ The exporter supports two authentication methods:
 ```yaml
 exporters:
   logicmonitor:
-    endpoint: https://company.logicmonitor.com/rest
+    endpoint: https://company.logicmonitor.com
     api_token:
       access_id: "your_access_id"
       access_key: "your_access_key"
@@ -102,7 +102,7 @@ Authorization: LMv1 <AccessId>:<Signature>:<Timestamp>
 ```yaml
 exporters:
   logicmonitor:
-    endpoint: https://company.logicmonitor.com/rest
+    endpoint: https://company.logicmonitor.com
     headers:
       Authorization: "Bearer <your_token>"
 ```

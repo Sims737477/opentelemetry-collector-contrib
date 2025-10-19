@@ -110,7 +110,7 @@ func TestLoadConfig(t *testing.T) {
 				BackOffConfig: configretry.NewDefaultBackOffConfig(),
 				QueueSettings: expectedQueueSettings,
 				ClientConfig: confighttp.ClientConfig{
-					Endpoint: "https://company.logicmonitor.com/rest",
+					Endpoint: "https://company.logicmonitor.com",
 				},
 				APIToken: APIToken{
 					AccessID:  "accessid",
@@ -124,7 +124,7 @@ func TestLoadConfig(t *testing.T) {
 				BackOffConfig: configretry.NewDefaultBackOffConfig(),
 				QueueSettings: expectedQueueSettings,
 				ClientConfig: confighttp.ClientConfig{
-					Endpoint: "https://company.logicmonitor.com/rest",
+					Endpoint: "https://company.logicmonitor.com",
 					Headers: map[string]configopaque.String{
 						"Authorization": "Bearer <token>",
 					},
@@ -137,7 +137,7 @@ func TestLoadConfig(t *testing.T) {
 				BackOffConfig: configretry.NewDefaultBackOffConfig(),
 				QueueSettings: expectedQueueSettings,
 				ClientConfig: confighttp.ClientConfig{
-					Endpoint: "https://company.logicmonitor.com/rest",
+					Endpoint: "https://company.logicmonitor.com",
 					Headers: map[string]configopaque.String{
 						"Authorization": "Bearer <token>",
 					},

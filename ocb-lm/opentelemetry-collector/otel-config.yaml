@@ -48,7 +48,7 @@ processors:
 exporters:
   logicmonitor:
     # Target URL to send metrics to LogicMonitor Push Metrics API
-    endpoint: "https://${env:LM_COMPANY}.logicmonitor.com/rest"
+    endpoint: "https://${env:LM_COMPANY}.logicmonitor.com"
     
     # LogicMonitor API authentication credentials
     api_token:
