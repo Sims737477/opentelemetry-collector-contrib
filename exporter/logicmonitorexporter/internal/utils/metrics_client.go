@@ -186,15 +186,21 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload,
 // generateAuth generates LMv1 authentication signature
 // Format: LMv1 <AccessId>:<Signature>:<Timestamp>
 // Signature = Base64(HMAC-SHA256(Method + Timestamp + Body + Path, AccessKey))
+// Note: timestamp parameter is in milliseconds but signature uses seconds to match metric values
 func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64) string {
-	// Create string to sign: Method + Timestamp + Body + Path
-	stringToSign := method + strconv.FormatInt(timestamp, 10) + body + path
+	// Convert timestamp from milliseconds to seconds
+	// This MUST match the timestamp format used in metric values (seconds)
+	timestampSeconds := timestamp / 1000
+	
+	// Create string to sign: Method + Timestamp(seconds) + Body + Path
+	stringToSign := method + strconv.FormatInt(timestampSeconds, 10) + body + path
 
 	// Debug log the string to sign components
 	c.logger.Debug("Generating LMv1 signature",
 		zap.String("method", method),
 		zap.String("path", path),
-		zap.Int64("timestamp", timestamp),
+		zap.Int64("timestamp_millis", timestamp),
+		zap.Int64("timestamp_seconds", timestampSeconds),
 		zap.Int("body_length", len(body)),
 		zap.String("body", body),
 		zap.String("access_id", c.accessID),
@@ -214,7 +220,7 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 		zap.String("signature", signature),
 		zap.Int("signature_length", len(signature)))
 
-	// Return formatted auth header
-	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestamp)
+	// Return formatted auth header using seconds timestamp
+	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestampSeconds)
 }
 
