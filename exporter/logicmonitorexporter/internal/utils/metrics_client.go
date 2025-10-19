@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	metricsIngestPath = "/rest/metric/ingest"
+	metricsIngestPath = "/metric/ingest"
 )
 
 // MetricsClient is a client for sending metrics to LogicMonitor Push Metrics API
