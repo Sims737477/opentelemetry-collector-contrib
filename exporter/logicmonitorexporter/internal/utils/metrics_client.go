@@ -9,6 +9,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -201,10 +202,13 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 		zap.String("string_to_sign", stringToSign),
 		zap.Int("string_to_sign_length", len(stringToSign)))
 
-	// Generate HMAC SHA256 signature and base64 encode it
+	// Generate HMAC SHA256 signature
+	// LogicMonitor SDK: hex encode the hash, then base64 encode the hex string
 	h := hmac.New(sha256.New, []byte(c.accessKey))
 	h.Write([]byte(stringToSign))
-	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
+	hash := h.Sum(nil)
+	hexString := hex.EncodeToString(hash)
+	signature := base64.StdEncoding.EncodeToString([]byte(hexString))
 
 	c.logger.Debug("Generated signature",
 		zap.String("signature", signature),
