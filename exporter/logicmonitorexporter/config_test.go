@@ -7,6 +7,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,9 +117,10 @@ func TestLoadConfig(t *testing.T) {
 					AccessID:  "accessid",
 					AccessKey: "accesskey",
 				},
-				Metrics: MetricsConfig{
-					AutoCreateResource: true,
-				},
+			Metrics: MetricsConfig{
+				AutoCreateResource: true,
+				BatchTimeout:       200 * time.Millisecond,
+			},
 			},
 		},
 		{
@@ -132,9 +134,10 @@ func TestLoadConfig(t *testing.T) {
 						"Authorization": "Bearer <token>",
 					},
 				},
-				Metrics: MetricsConfig{
-					AutoCreateResource: true,
-				},
+			Metrics: MetricsConfig{
+				AutoCreateResource: true,
+				BatchTimeout:       200 * time.Millisecond,
+			},
 			},
 		},
 		{
@@ -151,9 +154,10 @@ func TestLoadConfig(t *testing.T) {
 				Logs: LogsConfig{
 					ResourceMappingOperation: "or",
 				},
-				Metrics: MetricsConfig{
-					AutoCreateResource: true,
-				},
+			Metrics: MetricsConfig{
+				AutoCreateResource: true,
+				BatchTimeout:       200 * time.Millisecond,
+			},
 			},
 		},
 	}

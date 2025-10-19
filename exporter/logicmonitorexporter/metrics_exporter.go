@@ -41,9 +41,10 @@ func (e *metricsExporter) start(ctx context.Context, host component.Host) error 
 	accessID := e.config.APIToken.AccessID
 	accessKey := string(e.config.APIToken.AccessKey)
 	autoCreateResource := e.config.Metrics.AutoCreateResource
+	batchTimeout := e.config.Metrics.BatchTimeout
 
 	ctx, e.cancel = context.WithCancel(ctx)
-	e.sender, err = metrics.NewSender(e.config.Endpoint, client, accessID, accessKey, autoCreateResource, e.settings.Logger)
+	e.sender, err = metrics.NewSender(e.config.Endpoint, client, accessID, accessKey, autoCreateResource, batchTimeout, e.settings.Logger)
 	if err != nil {
 		return err
 	}

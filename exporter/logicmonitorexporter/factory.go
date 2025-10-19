@@ -7,6 +7,7 @@ package logicmonitorexporter // import "github.com/open-telemetry/opentelemetry-
 
 import (
 	"context"
+	"time"
 
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/config/configretry"
@@ -41,7 +42,8 @@ func createDefaultConfig() component.Config {
 		BackOffConfig: configretry.NewDefaultBackOffConfig(),
 		QueueSettings: queueSettings,
 		Metrics: MetricsConfig{
-			AutoCreateResource: true, // Default to auto-creating resources
+			AutoCreateResource: true,         // Default to auto-creating resources
+			BatchTimeout:       200 * time.Millisecond, // Default 200ms batch timeout
 		},
 	}
 }

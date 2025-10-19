@@ -15,7 +15,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	"go.uber.org/zap"
 )
@@ -89,7 +88,8 @@ func NewMetricsClient(endpoint, accessID, accessKey string, autoCreateResource b
 }
 
 // SendMetrics sends metric payload to LogicMonitor
-func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload) (*MetricResponse, error) {
+// timestamp should be in milliseconds and should match the timestamps in the metric data
+func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload, timestamp int64) (*MetricResponse, error) {
 	// Marshal payload to JSON
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -109,9 +109,9 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Generate authentication signature
+	// Generate authentication signature using provided timestamp
 	// Note: The path for signature includes the query string
-	timestamp := time.Now().UnixMilli()
+	// The timestamp should match the metric data timestamps for proper authentication
 	pathWithQuery := metricsIngestPath + queryString
 	auth := c.generateAuth(http.MethodPost, pathWithQuery, string(body), timestamp)
 

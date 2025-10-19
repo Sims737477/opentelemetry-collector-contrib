@@ -78,6 +78,7 @@ exporters:
     # Metrics Configuration
     metrics:
       auto_create_resource: true      # Automatically create resources if they don't exist (default: true)
+      batch_timeout: 200ms            # Maximum time to wait before sending a batch (default: 200ms, 0 = immediate)
 ```
 
 ## Authentication
@@ -169,6 +170,44 @@ exporters:
 ```
 
 When enabled, the API request includes `?create=true` query parameter, and this parameter is included in the LMv1 authentication signature calculation.
+
+### Metric Batching
+
+The exporter automatically batches metrics to optimize throughput and respect LogicMonitor's rate limits. Batching behavior is controlled by the `metrics.batch_timeout` configuration option.
+
+**Default behavior (batch_timeout: 200ms):**
+```yaml
+exporters:
+  logicmonitor:
+    endpoint: https://company.logicmonitor.com/rest
+    api_token:
+      access_id: "your_access_id"
+      access_key: "your_access_key"
+    metrics:
+      batch_timeout: 200ms  # Wait up to 200ms to accumulate metrics before sending
+```
+
+When set to a non-zero value, the exporter will:
+- Accumulate metrics for up to the specified duration
+- Group metrics by resource, datasource, and timestamp
+- Send batches when either the timeout expires or size limits are reached (100 instances or ~1MB payload)
+- Use the actual metric timestamp for authentication signatures
+
+**Immediate sending (batch_timeout: 0):**
+```yaml
+exporters:
+  logicmonitor:
+    metrics:
+      batch_timeout: 0  # Send immediately, subject only to size limits
+```
+
+When set to zero, metrics are sent immediately without waiting, though they will still be batched if they exceed size limits.
+
+**Considerations:**
+- **Lower timeout (e.g., 50ms)**: Lower latency, more API calls, less efficient
+- **Higher timeout (e.g., 1s)**: Higher latency, fewer API calls, more efficient batching
+- **Zero timeout**: Minimum latency, maximum API calls, suitable for low-volume scenarios
+- Metrics with different timestamps are automatically batched separately to ensure authentication accuracy
 
 **Manual resource management (auto_create_resource: false):**
 ```yaml

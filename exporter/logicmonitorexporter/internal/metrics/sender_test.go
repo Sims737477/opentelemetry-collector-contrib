@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/pdata/testdata"
@@ -32,7 +33,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx := context.Background()
 
-		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, zap.NewNop())
+		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, 200*time.Millisecond, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
@@ -52,7 +53,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx := context.Background()
 
-		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, zap.NewNop())
+		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, 200*time.Millisecond, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))
@@ -72,7 +73,7 @@ func TestSendMetrics(t *testing.T) {
 
 		ctx := context.Background()
 
-		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, zap.NewNop())
+		sender, err := NewSender(ts.URL, ts.Client(), "testId", "testKey", true, 200*time.Millisecond, zap.NewNop())
 		assert.NoError(t, err)
 
 		err = sender.SendMetrics(ctx, testdata.GenerateMetrics(1))

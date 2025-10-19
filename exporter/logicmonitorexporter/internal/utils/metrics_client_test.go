@@ -72,9 +72,10 @@ func TestSendMetrics_Success(t *testing.T) {
 		},
 	}
 
-	// Send metrics
+	// Send metrics with a test timestamp
 	ctx := context.Background()
-	resp, err := client.SendMetrics(ctx, payload)
+	timestamp := time.Now().UnixMilli()
+	resp, err := client.SendMetrics(ctx, payload, timestamp)
 
 	// Verify
 	require.NoError(t, err)
@@ -109,9 +110,10 @@ func TestSendMetrics_Error(t *testing.T) {
 		Instances:    []MetricInstance{},
 	}
 
-	// Send metrics
+	// Send metrics with a test timestamp
 	ctx := context.Background()
-	resp, err := client.SendMetrics(ctx, payload)
+	timestamp := time.Now().UnixMilli()
+	resp, err := client.SendMetrics(ctx, payload, timestamp)
 
 	// Verify
 	assert.Error(t, err)
@@ -199,9 +201,10 @@ func TestSendMetrics_WithoutAutoCreate(t *testing.T) {
 		},
 	}
 
-	// Send metrics
+	// Send metrics with a test timestamp
 	ctx := context.Background()
-	resp, err := client.SendMetrics(ctx, payload)
+	timestamp := time.Now().UnixMilli()
+	resp, err := client.SendMetrics(ctx, payload, timestamp)
 
 	// Verify
 	require.NoError(t, err)

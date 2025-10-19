@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -29,25 +30,29 @@ const (
 type Sender struct {
 	logger        *zap.Logger
 	metricsClient *lmutils.MetricsClient
+	batchTimeout  time.Duration
 }
 
 // metricBatch accumulates metrics for batching within LogicMonitor limits
 type metricBatch struct {
-	resourceName    string
-	resourceIDs     map[string]string
-	dataSourceName  string
-	instances       []lmutils.MetricInstance
-	estimatedSize   int // Estimated JSON size in bytes
-	instanceCount   int
+	resourceName   string
+	resourceIDs    map[string]string
+	dataSourceName string
+	instances      []lmutils.MetricInstance
+	estimatedSize  int    // Estimated JSON size in bytes
+	instanceCount  int
+	timestampStr   string    // Timestamp string from metric data (Unix seconds as string, e.g., "1760864865")
+	createdAt      time.Time // Time when batch was created (for timeout tracking)
 }
 
 // NewSender creates a new Sender
-func NewSender(endpoint string, client *http.Client, accessID, accessKey string, autoCreateResource bool, logger *zap.Logger) (*Sender, error) {
+func NewSender(endpoint string, client *http.Client, accessID, accessKey string, autoCreateResource bool, batchTimeout time.Duration, logger *zap.Logger) (*Sender, error) {
 	metricsClient := lmutils.NewMetricsClient(endpoint, accessID, accessKey, autoCreateResource, client, logger)
 	
 	return &Sender{
 		logger:        logger,
 		metricsClient: metricsClient,
+		batchTimeout:  batchTimeout,
 	}, nil
 }
 
@@ -101,6 +106,26 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 						instances:      make([]lmutils.MetricInstance, 0, maxInstancesPerPayload),
 						estimatedSize:  500, // Base size for resource and datasource structure
 						instanceCount:  0,
+						createdAt:      time.Now(), // Track batch creation time for timeout
+					}
+					batches[batchKey] = batch
+				}
+				
+				// Check if batch has timed out (only if timeout > 0)
+				if s.batchTimeout > 0 && time.Since(batch.createdAt) >= s.batchTimeout {
+					// Flush timed-out batch
+					if err := s.flushBatch(ctx, batch); err != nil {
+						return err
+					}
+					// Create new batch
+					batch = &metricBatch{
+						resourceName:   resourceName,
+						resourceIDs:    mergedResourceID,
+						dataSourceName: dataSourceName,
+						instances:      make([]lmutils.MetricInstance, 0, maxInstancesPerPayload),
+						estimatedSize:  500,
+						instanceCount:  0,
+						createdAt:      time.Now(),
 					}
 					batches[batchKey] = batch
 				}
@@ -145,7 +170,12 @@ func (s *Sender) addGaugeToBatch(ctx context.Context, batch *metricBatch, batche
 
 	for i := 0; i < dataPoints.Len(); i++ {
 		dp := dataPoints.At(i)
-		instance := s.createMetricInstance(metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), "GAUGE")
+		instance, timestampStr := s.createMetricInstance(metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), "GAUGE")
+		
+		// Set batch timestamp from first instance
+		if batch.instanceCount == 0 {
+			batch.timestampStr = timestampStr
+		}
 		
 		// Check if we can add this instance to the batch
 		if !batch.canAddInstance(&instance) {
@@ -157,6 +187,8 @@ func (s *Sender) addGaugeToBatch(ctx context.Context, batch *metricBatch, batche
 			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
 			batch.estimatedSize = 500
 			batch.instanceCount = 0
+			batch.timestampStr = timestampStr // Set timestamp for new batch
+			batch.createdAt = time.Now()      // Reset creation time
 		}
 		
 		batch.addInstance(instance)
@@ -176,7 +208,12 @@ func (s *Sender) addSumToBatch(ctx context.Context, batch *metricBatch, batches 
 
 	for i := 0; i < dataPoints.Len(); i++ {
 		dp := dataPoints.At(i)
-		instance := s.createMetricInstance(metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), metricType)
+		instance, timestampStr := s.createMetricInstance(metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), metricType)
+		
+		// Set batch timestamp from first instance
+		if batch.instanceCount == 0 {
+			batch.timestampStr = timestampStr
+		}
 		
 		if !batch.canAddInstance(&instance) {
 			if err := s.flushBatch(ctx, batch); err != nil {
@@ -185,6 +222,8 @@ func (s *Sender) addSumToBatch(ctx context.Context, batch *metricBatch, batches 
 			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
 			batch.estimatedSize = 500
 			batch.instanceCount = 0
+			batch.timestampStr = timestampStr
+			batch.createdAt = time.Now() // Reset creation time
 		}
 		
 		batch.addInstance(instance)
@@ -201,7 +240,13 @@ func (s *Sender) addHistogramToBatch(ctx context.Context, batch *metricBatch, ba
 		dp := dataPoints.At(i)
 		
 		// Add count
-		countInstance := s.createMetricInstance(metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		countInstance, timestampStr := s.createMetricInstance(metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		
+		// Set batch timestamp from first instance
+		if batch.instanceCount == 0 {
+			batch.timestampStr = timestampStr
+		}
+		
 		if !batch.canAddInstance(&countInstance) {
 			if err := s.flushBatch(ctx, batch); err != nil {
 				return err
@@ -209,12 +254,14 @@ func (s *Sender) addHistogramToBatch(ctx context.Context, batch *metricBatch, ba
 			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
 			batch.estimatedSize = 500
 			batch.instanceCount = 0
+			batch.timestampStr = timestampStr
+			batch.createdAt = time.Now() // Reset creation time
 		}
 		batch.addInstance(countInstance)
 
 		// Add sum if available
 		if dp.HasSum() {
-			sumInstance := s.createMetricInstance(metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
+			sumInstance, _ := s.createMetricInstance(metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
 			if !batch.canAddInstance(&sumInstance) {
 				if err := s.flushBatch(ctx, batch); err != nil {
 					return err
@@ -222,6 +269,8 @@ func (s *Sender) addHistogramToBatch(ctx context.Context, batch *metricBatch, ba
 				batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
 				batch.estimatedSize = 500
 				batch.instanceCount = 0
+				batch.timestampStr = timestampStr
+				batch.createdAt = time.Now() // Reset creation time
 			}
 			batch.addInstance(sumInstance)
 		}
@@ -238,7 +287,13 @@ func (s *Sender) addSummaryToBatch(ctx context.Context, batch *metricBatch, batc
 		dp := dataPoints.At(i)
 		
 		// Add count
-		countInstance := s.createMetricInstance(metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		countInstance, timestampStr := s.createMetricInstance(metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		
+		// Set batch timestamp from first instance
+		if batch.instanceCount == 0 {
+			batch.timestampStr = timestampStr
+		}
+		
 		if !batch.canAddInstance(&countInstance) {
 			if err := s.flushBatch(ctx, batch); err != nil {
 				return err
@@ -246,11 +301,13 @@ func (s *Sender) addSummaryToBatch(ctx context.Context, batch *metricBatch, batc
 			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
 			batch.estimatedSize = 500
 			batch.instanceCount = 0
+			batch.timestampStr = timestampStr
+			batch.createdAt = time.Now() // Reset creation time
 		}
 		batch.addInstance(countInstance)
 
 		// Add sum
-		sumInstance := s.createMetricInstance(metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		sumInstance, _ := s.createMetricInstance(metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
 		if !batch.canAddInstance(&sumInstance) {
 			if err := s.flushBatch(ctx, batch); err != nil {
 				return err
@@ -258,6 +315,8 @@ func (s *Sender) addSummaryToBatch(ctx context.Context, batch *metricBatch, batc
 			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
 			batch.estimatedSize = 500
 			batch.instanceCount = 0
+			batch.timestampStr = timestampStr
+			batch.createdAt = time.Now() // Reset creation time
 		}
 		batch.addInstance(sumInstance)
 	}
@@ -265,12 +324,13 @@ func (s *Sender) addSummaryToBatch(ctx context.Context, batch *metricBatch, batc
 }
 
 // createMetricInstance creates a MetricInstance from metric data
-func (s *Sender) createMetricInstance(metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) lmutils.MetricInstance {
+// Returns the instance and the timestamp string (Unix seconds)
+func (s *Sender) createMetricInstance(metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) (lmutils.MetricInstance, string) {
 	instanceName := metricName
 	instanceProperties := convertAttributes(attributes)
 	timestampStr := strconv.FormatInt(timestamp.AsTime().Unix(), 10)
 
-	return lmutils.MetricInstance{
+	instance := lmutils.MetricInstance{
 		InstanceName:        sanitizeName(instanceName),
 		InstanceDisplayName: sanitizeName(instanceName),
 		InstanceProperties:  instanceProperties,
@@ -285,6 +345,8 @@ func (s *Sender) createMetricInstance(metricName string, value float64, timestam
 			},
 		},
 	}
+	
+	return instance, timestampStr
 }
 
 func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dataSourceName, dataSourceDisplayName, dataSourceGroup, metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) error {
@@ -338,8 +400,9 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		zap.String("metricName", metricName),
 		zap.Float64("value", value))
 
-	// Send to LogicMonitor
-	resp, err := s.metricsClient.SendMetrics(ctx, payload)
+	// Send to LogicMonitor with timestamp in milliseconds
+	timestampMillis := timestamp.AsTime().UnixMilli()
+	resp, err := s.metricsClient.SendMetrics(ctx, payload, timestampMillis)
 	if err != nil {
 		return fmt.Errorf("failed to send metrics: %w", err)
 	}
@@ -423,14 +486,24 @@ func (s *Sender) flushBatch(ctx context.Context, batch *metricBatch) error {
 			zap.Int("instanceCount", batch.instanceCount))
 	}
 	
+	// Convert timestamp string (Unix seconds) to milliseconds for auth signature
+	timestampMillis := int64(0)
+	if batch.timestampStr != "" {
+		if ts, err := strconv.ParseInt(batch.timestampStr, 10, 64); err == nil {
+			timestampMillis = ts * 1000 // Convert seconds to milliseconds
+		}
+	}
+	
 	s.logger.Debug("Sending batched metrics",
 		zap.String("resourceName", batch.resourceName),
 		zap.String("dataSource", batch.dataSourceName),
 		zap.Int("instanceCount", batch.instanceCount),
-		zap.Int("estimatedSize", actualSize))
+		zap.Int("estimatedSize", actualSize),
+		zap.String("timestampStr", batch.timestampStr),
+		zap.Int64("timestampMillis", timestampMillis))
 	
-	// Send to LogicMonitor
-	resp, err := s.metricsClient.SendMetrics(ctx, payload)
+	// Send to LogicMonitor with the batch timestamp from first metric
+	resp, err := s.metricsClient.SendMetrics(ctx, payload, timestampMillis)
 	if err != nil {
 		return fmt.Errorf("failed to send batched metrics: %w", err)
 	}

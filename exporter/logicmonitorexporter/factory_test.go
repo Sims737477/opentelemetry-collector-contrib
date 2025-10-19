@@ -5,6 +5,7 @@ package logicmonitorexporter
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/component/componenttest"
@@ -29,7 +30,8 @@ func TestCreateDefaultConfig(t *testing.T) {
 		BackOffConfig: configretry.NewDefaultBackOffConfig(),
 		QueueSettings: expectedQueueSettings,
 		Metrics: MetricsConfig{
-			AutoCreateResource: true, // Default to auto-creating resources
+			AutoCreateResource: true,                   // Default to auto-creating resources
+			BatchTimeout:       200 * time.Millisecond, // Default batch timeout
 		},
 	}, cfg, "failed to create default config")
 

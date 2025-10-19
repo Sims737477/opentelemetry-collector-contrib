@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/config/confighttp"
 	"go.opentelemetry.io/collector/config/configopaque"
@@ -46,6 +47,12 @@ type MetricsConfig struct {
 	// Maps to the "create" query parameter in the Push Metrics API
 	// Default: true
 	AutoCreateResource bool `mapstructure:"auto_create_resource"`
+	
+	// BatchTimeout is the maximum time to wait before sending a batch
+	// If set to 0, data will be sent immediately (subject to max payload size limit)
+	// Default: 200ms
+	BatchTimeout time.Duration `mapstructure:"batch_timeout"`
+	
 	// prevent unkeyed literal initialization
 	_ struct{}
 }
