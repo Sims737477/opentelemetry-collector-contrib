@@ -5,17 +5,13 @@ package metrics // import "github.com/open-telemetry/opentelemetry-collector-con
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
-	lmsdkmetrics "github.com/logicmonitor/lm-data-sdk-go/api/metrics"
-	"github.com/logicmonitor/lm-data-sdk-go/model"
-	"github.com/logicmonitor/lm-data-sdk-go/utils"
-	"go.opentelemetry.io/collector/consumer/consumererror"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
@@ -23,51 +19,45 @@ import (
 	lmutils "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/logicmonitorexporter/internal/utils"
 )
 
+const (
+	// LogicMonitor rate limits: https://www.logicmonitor.com/support/push-metrics/rate-limiting-for-push-metrics
+	maxInstancesPerPayload   = 100      // Maximum instances allowed per payload
+	maxPayloadSizeBytes      = 1048576  // 1 MB uncompressed payload limit
+	maxCompressedPayloadSize = 104858   // ~102 KB compressed payload limit
+)
+
 type Sender struct {
-	logger             *zap.Logger
-	metricIngestClient *lmsdkmetrics.LMMetricIngest
+	logger        *zap.Logger
+	metricsClient *lmutils.MetricsClient
 }
 
-// BatchingConfig holds the batching configuration parameters
-type BatchingConfig struct {
-	Interval  time.Duration
-	RateLimit int
+// metricBatch accumulates metrics for batching within LogicMonitor limits
+type metricBatch struct {
+	resourceName    string
+	resourceIDs     map[string]string
+	dataSourceName  string
+	instances       []lmutils.MetricInstance
+	estimatedSize   int // Estimated JSON size in bytes
+	instanceCount   int
 }
 
 // NewSender creates a new Sender
-func NewSender(ctx context.Context, endpoint string, client *http.Client, authParams utils.AuthParams, batchingConfig BatchingConfig, logger *zap.Logger) (*Sender, error) {
-	options := []lmsdkmetrics.Option{
-		lmsdkmetrics.WithAuthentication(authParams),
-		lmsdkmetrics.WithHTTPClient(client),
-		lmsdkmetrics.WithEndpoint(endpoint),
-	}
-
-	// Configure batching based on provided config
-	if batchingConfig.Interval > 0 {
-		options = append(options, lmsdkmetrics.WithMetricBatchingInterval(batchingConfig.Interval))
-	} else {
-		// If interval is 0, disable batching
-		options = append(options, lmsdkmetrics.WithMetricBatchingDisabled())
-	}
-
-	// Configure rate limiting if specified
-	if batchingConfig.RateLimit > 0 {
-		options = append(options, lmsdkmetrics.WithRateLimit(batchingConfig.RateLimit))
-	}
-
-	metricIngestClient, err := lmsdkmetrics.NewLMMetricIngest(ctx, options...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metricIngestClient: %w", err)
-	}
+func NewSender(endpoint string, client *http.Client, accessID, accessKey string, logger *zap.Logger) (*Sender, error) {
+	metricsClient := lmutils.NewMetricsClient(endpoint, accessID, accessKey, client)
+	
 	return &Sender{
-		logger:             logger,
-		metricIngestClient: metricIngestClient,
+		logger:        logger,
+		metricsClient: metricsClient,
 	}, nil
 }
 
 func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
-	// Convert OpenTelemetry metrics to LogicMonitor format
+	// Convert OpenTelemetry metrics to LogicMonitor format with batching
+	// to respect LogicMonitor rate limits
 	resourceMetrics := md.ResourceMetrics()
+
+	// Track batches by resource+datasource to group metrics
+	batches := make(map[string]*metricBatch)
 
 	for i := 0; i < resourceMetrics.Len(); i++ {
 		resourceMetric := resourceMetrics.At(i)
@@ -78,6 +68,15 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 		resourceID := getResourceID(resource.Attributes())
 		resourceProps := convertAttributes(resource.Attributes())
 
+		// Merge resourceProps with resourceID
+		mergedResourceID := make(map[string]string)
+		for k, v := range resourceID {
+			mergedResourceID[k] = v
+		}
+		for k, v := range resourceProps {
+			mergedResourceID[k] = v
+		}
+
 		scopeMetrics := resourceMetric.ScopeMetrics()
 		for j := 0; j < scopeMetrics.Len(); j++ {
 			scopeMetric := scopeMetrics.At(j)
@@ -86,23 +85,37 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 			for k := 0; k < metrics.Len(); k++ {
 				metric := metrics.At(k)
 
-				// Create datasource input with custom DataSourceName based on metric name
+				// Create datasource name based on metric name
 				dataSourceName := generateDataSourceName(metric.Name())
-				dsInput := model.DatasourceInput{
-					DataSourceName: dataSourceName,
+
+				// Create batch key (resource + datasource)
+				batchKey := resourceName + "|" + dataSourceName
+
+				// Get or create batch for this resource+datasource combination
+				batch, exists := batches[batchKey]
+				if !exists {
+					batch = &metricBatch{
+						resourceName:   resourceName,
+						resourceIDs:    mergedResourceID,
+						dataSourceName: dataSourceName,
+						instances:      make([]lmutils.MetricInstance, 0, maxInstancesPerPayload),
+						estimatedSize:  500, // Base size for resource and datasource structure
+						instanceCount:  0,
+					}
+					batches[batchKey] = batch
 				}
 
-				// Process different metric types
+				// Process different metric types and add to batch
 				var err error
 				switch metric.Type() {
 				case pmetric.MetricTypeGauge:
-					err = s.processGauge(ctx, resourceName, resourceID, resourceProps, dsInput, metric)
+					err = s.addGaugeToBatch(ctx, batch, batches, batchKey, metric)
 				case pmetric.MetricTypeSum:
-					err = s.processSum(ctx, resourceName, resourceID, resourceProps, dsInput, metric)
+					err = s.addSumToBatch(ctx, batch, batches, batchKey, metric)
 				case pmetric.MetricTypeHistogram:
-					err = s.processHistogram(ctx, resourceName, resourceID, resourceProps, dsInput, metric)
+					err = s.addHistogramToBatch(ctx, batch, batches, batchKey, metric)
 				case pmetric.MetricTypeSummary:
-					err = s.processSummary(ctx, resourceName, resourceID, resourceProps, dsInput, metric)
+					err = s.addSummaryToBatch(ctx, batch, batches, batchKey, metric)
 				default:
 					s.logger.Warn("Unsupported metric type", zap.String("type", metric.Type().String()))
 					continue
@@ -115,24 +128,44 @@ func (s *Sender) SendMetrics(ctx context.Context, md pmetric.Metrics) error {
 		}
 	}
 
+	// Flush all remaining batches
+	for _, batch := range batches {
+		if err := s.flushBatch(ctx, batch); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
-func (s *Sender) processGauge(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dsInput model.DatasourceInput, metric pmetric.Metric) error {
+// addGaugeToBatch adds gauge datapoints to the batch, flushing if needed
+func (s *Sender) addGaugeToBatch(ctx context.Context, batch *metricBatch, batches map[string]*metricBatch, batchKey string, metric pmetric.Metric) error {
 	gauge := metric.Gauge()
 	dataPoints := gauge.DataPoints()
 
 	for i := 0; i < dataPoints.Len(); i++ {
 		dp := dataPoints.At(i)
-		err := s.sendDataPoint(ctx, resourceName, resourceID, resourceProps, dsInput, metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), "GAUGE")
-		if err != nil {
-			return err
+		instance := s.createMetricInstance(metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), "GAUGE")
+		
+		// Check if we can add this instance to the batch
+		if !batch.canAddInstance(&instance) {
+			// Flush current batch and create new one
+			if err := s.flushBatch(ctx, batch); err != nil {
+				return err
+			}
+			// Reset batch
+			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
+			batch.estimatedSize = 500
+			batch.instanceCount = 0
 		}
+		
+		batch.addInstance(instance)
 	}
 	return nil
 }
 
-func (s *Sender) processSum(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dsInput model.DatasourceInput, metric pmetric.Metric) error {
+// addSumToBatch adds sum datapoints to the batch, flushing if needed
+func (s *Sender) addSumToBatch(ctx context.Context, batch *metricBatch, batches map[string]*metricBatch, batchKey string, metric pmetric.Metric) error {
 	sum := metric.Sum()
 	dataPoints := sum.DataPoints()
 
@@ -143,59 +176,118 @@ func (s *Sender) processSum(ctx context.Context, resourceName string, resourceID
 
 	for i := 0; i < dataPoints.Len(); i++ {
 		dp := dataPoints.At(i)
-		err := s.sendDataPoint(ctx, resourceName, resourceID, resourceProps, dsInput, metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), metricType)
-		if err != nil {
-			return err
+		instance := s.createMetricInstance(metric.Name(), dp.DoubleValue(), dp.Timestamp(), dp.Attributes(), metricType)
+		
+		if !batch.canAddInstance(&instance) {
+			if err := s.flushBatch(ctx, batch); err != nil {
+				return err
+			}
+			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
+			batch.estimatedSize = 500
+			batch.instanceCount = 0
 		}
+		
+		batch.addInstance(instance)
 	}
 	return nil
 }
 
-func (s *Sender) processHistogram(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dsInput model.DatasourceInput, metric pmetric.Metric) error {
+// addHistogramToBatch adds histogram datapoints to the batch, flushing if needed
+func (s *Sender) addHistogramToBatch(ctx context.Context, batch *metricBatch, batches map[string]*metricBatch, batchKey string, metric pmetric.Metric) error {
 	histogram := metric.Histogram()
 	dataPoints := histogram.DataPoints()
 
 	for i := 0; i < dataPoints.Len(); i++ {
 		dp := dataPoints.At(i)
-		// Send count
-		err := s.sendDataPoint(ctx, resourceName, resourceID, resourceProps, dsInput, metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
-		if err != nil {
-			return err
-		}
-
-		// Send sum if available
-		if dp.HasSum() {
-			err = s.sendDataPoint(ctx, resourceName, resourceID, resourceProps, dsInput, metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
-			if err != nil {
+		
+		// Add count
+		countInstance := s.createMetricInstance(metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		if !batch.canAddInstance(&countInstance) {
+			if err := s.flushBatch(ctx, batch); err != nil {
 				return err
 			}
+			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
+			batch.estimatedSize = 500
+			batch.instanceCount = 0
+		}
+		batch.addInstance(countInstance)
+
+		// Add sum if available
+		if dp.HasSum() {
+			sumInstance := s.createMetricInstance(metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
+			if !batch.canAddInstance(&sumInstance) {
+				if err := s.flushBatch(ctx, batch); err != nil {
+					return err
+				}
+				batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
+				batch.estimatedSize = 500
+				batch.instanceCount = 0
+			}
+			batch.addInstance(sumInstance)
 		}
 	}
 	return nil
 }
 
-func (s *Sender) processSummary(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dsInput model.DatasourceInput, metric pmetric.Metric) error {
+// addSummaryToBatch adds summary datapoints to the batch, flushing if needed
+func (s *Sender) addSummaryToBatch(ctx context.Context, batch *metricBatch, batches map[string]*metricBatch, batchKey string, metric pmetric.Metric) error {
 	summary := metric.Summary()
 	dataPoints := summary.DataPoints()
 
 	for i := 0; i < dataPoints.Len(); i++ {
 		dp := dataPoints.At(i)
-		// Send count
-		err := s.sendDataPoint(ctx, resourceName, resourceID, resourceProps, dsInput, metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
-		if err != nil {
-			return err
+		
+		// Add count
+		countInstance := s.createMetricInstance(metric.Name()+"_count", float64(dp.Count()), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		if !batch.canAddInstance(&countInstance) {
+			if err := s.flushBatch(ctx, batch); err != nil {
+				return err
+			}
+			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
+			batch.estimatedSize = 500
+			batch.instanceCount = 0
 		}
+		batch.addInstance(countInstance)
 
-		// Send sum
-		err = s.sendDataPoint(ctx, resourceName, resourceID, resourceProps, dsInput, metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
-		if err != nil {
-			return err
+		// Add sum
+		sumInstance := s.createMetricInstance(metric.Name()+"_sum", dp.Sum(), dp.Timestamp(), dp.Attributes(), "COUNTER")
+		if !batch.canAddInstance(&sumInstance) {
+			if err := s.flushBatch(ctx, batch); err != nil {
+				return err
+			}
+			batch.instances = make([]lmutils.MetricInstance, 0, maxInstancesPerPayload)
+			batch.estimatedSize = 500
+			batch.instanceCount = 0
 		}
+		batch.addInstance(sumInstance)
 	}
 	return nil
 }
 
-func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dsInput model.DatasourceInput, metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) error {
+// createMetricInstance creates a MetricInstance from metric data
+func (s *Sender) createMetricInstance(metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) lmutils.MetricInstance {
+	instanceName := metricName
+	instanceProperties := convertAttributes(attributes)
+	timestampStr := strconv.FormatInt(timestamp.AsTime().Unix(), 10)
+
+	return lmutils.MetricInstance{
+		InstanceName:        sanitizeName(instanceName),
+		InstanceDisplayName: sanitizeName(instanceName),
+		InstanceProperties:  instanceProperties,
+		DataPoints: []lmutils.MetricDataPoint{
+			{
+				DataPointName:            sanitizeName(metricName),
+				DataPointType:            metricType,
+				DataPointAggregationType: "none",
+				Values: map[string]interface{}{
+					timestampStr: value,
+				},
+			},
+		},
+	}
+}
+
+func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourceID map[string]string, resourceProps map[string]string, dataSourceName, dataSourceDisplayName, dataSourceGroup, metricName string, value float64, timestamp pcommon.Timestamp, attributes pcommon.Map, metricType string) error {
 	// Merge resourceProps with resourceID
 	mergedResourceID := make(map[string]string)
 	// First copy resourceID
@@ -207,46 +299,33 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 		mergedResourceID[k] = v
 	}
 
-	// Create resource input
-	rInput := model.ResourceInput{
-		ResourceName: resourceName,
-		ResourceID:   mergedResourceID,
-		IsCreate:     true,
-	}
-
 	// Create instance input from attributes
 	instanceName := metricName // Use metric name as instance name
-	instInput := model.InstanceInput{
-		InstanceName:       sanitizeName(instanceName),
-		InstanceProperties: convertAttributes(attributes),
-	}
+	instanceProperties := convertAttributes(attributes)
 
-	// Create datapoint input with sanitized name
+	// Create datapoint with timestamp
 	timestampStr := strconv.FormatInt(timestamp.AsTime().Unix(), 10)
-	dpInput := model.DataPointInput{
-		DataPointName:            sanitizeName(metricName),
-		DataPointType:            metricType,
-		DataPointAggregationType: "none",
-		Value:                    map[string]string{timestampStr: strconv.FormatFloat(value, 'f', -1, 64)},
-	}
 
-	// Log the complete LogicMonitor API payload structure
-	completePayload := map[string]interface{}{
-		"resourceName":          resourceName,
-		"resourceIds":           mergedResourceID,
-		"dataSource":            dsInput.DataSourceName,
-		"dataSourceDisplayName": dsInput.DataSourceDisplayName,
-		"dataSourceGroup":       dsInput.DataSourceGroup,
-		"instances": []map[string]interface{}{
+	// Create payload
+	payload := &lmutils.MetricPayload{
+		ResourceName:          resourceName,
+		ResourceIDs:           mergedResourceID,
+		DataSource:            dataSourceName,
+		DataSourceDisplayName: dataSourceDisplayName,
+		DataSourceGroup:       dataSourceGroup,
+		Instances: []lmutils.MetricInstance{
 			{
-				"instanceName":        instInput.InstanceName,
-				"instanceProperties":  instInput.InstanceProperties,
-				"dataPoints": []map[string]interface{}{
+				InstanceName:        sanitizeName(instanceName),
+				InstanceDisplayName: sanitizeName(instanceName),
+				InstanceProperties:  instanceProperties,
+				DataPoints: []lmutils.MetricDataPoint{
 					{
-						"dataPointName":            dpInput.DataPointName,
-						"dataPointType":            dpInput.DataPointType,
-						"dataPointAggregationType": "none",
-						"values":                   map[string]interface{}{timestampStr: value},
+						DataPointName:            sanitizeName(metricName),
+						DataPointType:            metricType,
+						DataPointAggregationType: "none",
+						Values: map[string]interface{}{
+							timestampStr: value,
+						},
 					},
 				},
 			},
@@ -254,14 +333,112 @@ func (s *Sender) sendDataPoint(ctx context.Context, resourceName string, resourc
 	}
 
 	s.logger.Debug("Sending metric data",
-		zap.Any("body", completePayload))
+		zap.String("resourceName", resourceName),
+		zap.String("dataSource", dataSourceName),
+		zap.String("metricName", metricName),
+		zap.Float64("value", value))
 
 	// Send to LogicMonitor
-	ingestResponse, err := s.metricIngestClient.SendMetrics(ctx, rInput, dsInput, instInput, dpInput)
+	resp, err := s.metricsClient.SendMetrics(ctx, payload)
 	if err != nil {
-		return s.handleError(ingestResponse, err)
+		return fmt.Errorf("failed to send metrics: %w", err)
 	}
 
+	if !resp.Success && len(resp.Errors) > 0 {
+		return fmt.Errorf("metric ingestion errors: %s", resp.Message)
+	}
+
+	return nil
+}
+
+// estimatePayloadSize estimates the JSON size of a payload for rate limit checking
+func estimatePayloadSize(payload *lmutils.MetricPayload) int {
+	// Quick estimation by marshaling to JSON
+	data, err := json.Marshal(payload)
+	if err != nil {
+		// If marshaling fails, return a conservative estimate
+		return maxPayloadSizeBytes
+	}
+	return len(data)
+}
+
+// canAddInstance checks if adding an instance would exceed LogicMonitor limits
+func (b *metricBatch) canAddInstance(instance *lmutils.MetricInstance) bool {
+	// Check instance count limit
+	if b.instanceCount+1 > maxInstancesPerPayload {
+		return false
+	}
+	
+	// Estimate size increase (conservative estimate)
+	// Each instance adds: instance name, properties, datapoints
+	estimatedIncrease := len(instance.InstanceName) + 500 // Conservative buffer for JSON structure
+	for _, dp := range instance.DataPoints {
+		estimatedIncrease += len(dp.DataPointName) + 100 // Datapoint name + value structure
+	}
+	
+	// Check if adding this would exceed payload size limit (with 20% safety margin)
+	// Use 80% of max size as safety limit
+	safetyLimit := (maxPayloadSizeBytes * 4) / 5 // 80% of max
+	if b.estimatedSize+estimatedIncrease > safetyLimit {
+		return false
+	}
+	
+	return true
+}
+
+// addInstance adds an instance to the batch
+func (b *metricBatch) addInstance(instance lmutils.MetricInstance) {
+	b.instances = append(b.instances, instance)
+	b.instanceCount++
+	
+	// Update estimated size
+	estimatedIncrease := len(instance.InstanceName) + 500
+	for _, dp := range instance.DataPoints {
+		estimatedIncrease += len(dp.DataPointName) + 100
+	}
+	b.estimatedSize += estimatedIncrease
+}
+
+// flush sends the accumulated batch to LogicMonitor
+func (s *Sender) flushBatch(ctx context.Context, batch *metricBatch) error {
+	if batch == nil || batch.instanceCount == 0 {
+		return nil
+	}
+	
+	payload := &lmutils.MetricPayload{
+		ResourceName:          batch.resourceName,
+		ResourceIDs:           batch.resourceIDs,
+		DataSource:            batch.dataSourceName,
+		DataSourceDisplayName: batch.dataSourceName,
+		DataSourceGroup:       "",
+		Instances:             batch.instances,
+	}
+	
+	// Final size check
+	actualSize := estimatePayloadSize(payload)
+	if actualSize > maxPayloadSizeBytes {
+		s.logger.Warn("Payload size exceeds limit, may be rejected by LogicMonitor",
+			zap.Int("payloadSize", actualSize),
+			zap.Int("limit", maxPayloadSizeBytes),
+			zap.Int("instanceCount", batch.instanceCount))
+	}
+	
+	s.logger.Debug("Sending batched metrics",
+		zap.String("resourceName", batch.resourceName),
+		zap.String("dataSource", batch.dataSourceName),
+		zap.Int("instanceCount", batch.instanceCount),
+		zap.Int("estimatedSize", actualSize))
+	
+	// Send to LogicMonitor
+	resp, err := s.metricsClient.SendMetrics(ctx, payload)
+	if err != nil {
+		return fmt.Errorf("failed to send batched metrics: %w", err)
+	}
+	
+	if !resp.Success && len(resp.Errors) > 0 {
+		return fmt.Errorf("metric ingestion errors: %s", resp.Message)
+	}
+	
 	return nil
 }
 
@@ -430,92 +607,6 @@ func sanitizeName(name string) string {
 	return sanitized
 }
 
-func (s *Sender) handleError(ingestResponse *lmsdkmetrics.SendMetricResponse, err error) error {
-	if ingestResponse != nil {
-		if ingestResponse.StatusCode == http.StatusMultiStatus {
-			// Log detailed error information for 207 Multi-Status responses
-			s.logger.Error("Multi-Status response received from LogicMonitor API",
-				zap.Int("status_code", ingestResponse.StatusCode),
-				zap.String("response_message", ingestResponse.Message),
-				zap.Int("total_errors", len(ingestResponse.MultiStatus)))
-
-			var permanentErrors []string
-			var temporaryErrors []string
-
-			// Log each individual error with detailed information
-			for i, status := range ingestResponse.MultiStatus {
-				errorCode := int(status.Code)
-
-				// Log structured error information for better debugging
-				s.logger.Error("LogicMonitor API rejected item",
-					zap.Int("item_index", i),
-					zap.Int("error_code", errorCode),
-					zap.String("error_message", status.Error),
-					zap.Bool("is_permanent", isPermanentClientFailure(errorCode)))
-
-				errorMsg := fmt.Sprintf("Item %d: Code=%d, Error=%s", i, errorCode, status.Error)
-
-				if isPermanentClientFailure(errorCode) {
-					permanentErrors = append(permanentErrors, errorMsg)
-				} else {
-					temporaryErrors = append(temporaryErrors, errorMsg)
-				}
-			}
-
-			// Log summary of error categorization
-			if len(permanentErrors) > 0 {
-				s.logger.Error("Permanent errors detected in Multi-Status response",
-					zap.Int("permanent_error_count", len(permanentErrors)),
-					zap.Int("temporary_error_count", len(temporaryErrors)),
-					zap.Strings("permanent_errors", permanentErrors))
-
-				if len(temporaryErrors) > 0 {
-					s.logger.Warn("Temporary errors also present (will be retried separately)",
-						zap.Strings("temporary_errors", temporaryErrors))
-				}
-
-				return consumererror.NewPermanent(fmt.Errorf("permanent failure errors detected: %v", permanentErrors))
-			}
-
-			// All errors are temporary, log them and return as retryable
-			s.logger.Warn("All errors in Multi-Status response are temporary (will be retried)",
-				zap.Int("temporary_error_count", len(temporaryErrors)),
-				zap.Strings("temporary_errors", temporaryErrors))
-
-			return fmt.Errorf("temporary failures detected: %v", temporaryErrors)
-		}
-
-		// Handle non-207 error responses
-		if isPermanentClientFailure(ingestResponse.StatusCode) {
-			s.logger.Error("Permanent client failure",
-				zap.Int("status_code", ingestResponse.StatusCode),
-				zap.String("response_message", ingestResponse.Message),
-				zap.Error(ingestResponse.Error))
-			return consumererror.NewPermanent(ingestResponse.Error)
-		}
-
-		// Temporary error
-		s.logger.Warn("Temporary error from LogicMonitor API",
-			zap.Int("status_code", ingestResponse.StatusCode),
-			zap.String("response_message", ingestResponse.Message),
-			zap.Error(ingestResponse.Error))
-		return ingestResponse.Error
-	}
-
-	// Check if this is a validation error (usually not permanent if it's due to data format issues)
-	if err != nil && strings.Contains(err.Error(), "validation failed") {
-		s.logger.Error("Validation error detected", zap.Error(err))
-		return consumererror.NewPermanent(err)
-	}
-
-	// Generic error
-	if err != nil {
-		s.logger.Error("Unexpected error during metric export", zap.Error(err))
-	}
-
-	return err
-}
-
 func getResourceName(attrs pcommon.Map) string {
 	if name, exists := attrs.Get("service.name"); exists {
 		return name.Str()
@@ -562,16 +653,3 @@ func getMetricDataPointCount(metric pmetric.Metric) int {
 	}
 }
 
-// Does the 'code' indicate a permanent error
-func isPermanentClientFailure(code int) bool {
-	switch code {
-	case http.StatusServiceUnavailable:
-		return false
-	case http.StatusGatewayTimeout:
-		return false
-	case http.StatusBadGateway:
-		return false
-	default:
-		return true
-	}
-}

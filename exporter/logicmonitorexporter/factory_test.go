@@ -21,9 +21,13 @@ func TestCreateDefaultConfig(t *testing.T) {
 	factory := NewFactory()
 	cfg := factory.CreateDefaultConfig()
 
+	// Expect default queue settings with LogicMonitor rate limit-aware queue size
+	expectedQueueSettings := exporterhelper.NewDefaultQueueConfig()
+	expectedQueueSettings.QueueSize = 10000 // LogicMonitor allows 10,000 requests/minute
+
 	assert.Equal(t, &Config{
 		BackOffConfig: configretry.NewDefaultBackOffConfig(),
-		QueueSettings: exporterhelper.NewDefaultQueueConfig(),
+		QueueSettings: expectedQueueSettings,
 	}, cfg, "failed to create default config")
 
 	assert.NoError(t, componenttest.CheckConfigStruct(cfg))

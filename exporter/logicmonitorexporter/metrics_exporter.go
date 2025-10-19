@@ -6,9 +6,7 @@ package logicmonitorexporter // import "github.com/open-telemetry/opentelemetry-
 import (
 	"context"
 	"fmt"
-	"time"
 
-	"github.com/logicmonitor/lm-data-sdk-go/utils"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/exporter"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -40,28 +38,11 @@ func (e *metricsExporter) start(ctx context.Context, host component.Host) error 
 		return fmt.Errorf("failed to create http client: %w", err)
 	}
 
-	authParams := utils.AuthParams{
-		AccessID:    e.config.APIToken.AccessID,
-		AccessKey:   string(e.config.APIToken.AccessKey),
-		BearerToken: string(e.config.Headers["Authorization"]),
-	}
-
-	// Configure batching parameters with defaults
-	batchingConfig := metrics.BatchingConfig{
-		Interval:  200 * time.Millisecond, // Default 200ms
-		RateLimit: 100,                     // Default 100 requests per second
-	}
-
-	// Override with user configuration if provided
-	if e.config.Metrics.BatchingInterval > -1 {
-		batchingConfig.Interval = e.config.Metrics.BatchingInterval
-	}
-	if e.config.Metrics.BatchingRateLimit > 0 {
-		batchingConfig.RateLimit = e.config.Metrics.BatchingRateLimit
-	}
+	accessID := e.config.APIToken.AccessID
+	accessKey := string(e.config.APIToken.AccessKey)
 
 	ctx, e.cancel = context.WithCancel(ctx)
-	e.sender, err = metrics.NewSender(ctx, e.config.Endpoint, client, authParams, batchingConfig, e.settings.Logger)
+	e.sender, err = metrics.NewSender(e.config.Endpoint, client, accessID, accessKey, e.settings.Logger)
 	if err != nil {
 		return err
 	}

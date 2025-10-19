@@ -29,9 +29,17 @@ func NewFactory() exporter.Factory {
 }
 
 func createDefaultConfig() component.Config {
+	// Configure default queue settings to respect LogicMonitor rate limits:
+	// https://www.logicmonitor.com/support/push-metrics/rate-limiting-for-push-metrics
+	// - Maximum 10,000 requests per minute (~167 requests/second)
+	// - Maximum 100 instances per payload
+	// - Maximum payload size: 1MB uncompressed, ~102KB compressed
+	queueSettings := exporterhelper.NewDefaultQueueConfig()
+	queueSettings.QueueSize = 10000 // Match the per-minute request limit
+	
 	return &Config{
 		BackOffConfig: configretry.NewDefaultBackOffConfig(),
-		QueueSettings: exporterhelper.NewDefaultQueueConfig(),
+		QueueSettings: queueSettings,
 	}
 }
 
