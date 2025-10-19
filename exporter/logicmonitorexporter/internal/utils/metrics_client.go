@@ -115,16 +115,6 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload,
 	// See: https://www.logicmonitor.com/support/push-metrics/ingesting-metrics-with-the-push-metrics-rest-api
 	auth := c.generateAuth(http.MethodPost, metricsIngestPath, string(body), timestamp)
 
-	// Debug logging for authentication
-	c.logger.Debug("LogicMonitor API Request",
-		zap.String("url", url),
-		zap.String("method", "POST"),
-		zap.Int("body_length", len(body)),
-		zap.String("body_payload", string(body)),
-		zap.Int64("timestamp", timestamp),
-		zap.String("access_id", c.accessID),
-		zap.String("auth_header", auth))
-
 	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", auth)
@@ -192,18 +182,6 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 	// The timestamp parameter is already in milliseconds, use it directly
 	stringToSign := method + strconv.FormatInt(timestamp, 10) + body + path
 
-	// Debug log the string to sign components
-	c.logger.Debug("Generating LMv1 signature",
-		zap.String("method", method),
-		zap.String("path", path),
-		zap.Int64("timestamp_millis", timestamp),
-		zap.Int("body_length", len(body)),
-		zap.String("body", body),
-		zap.String("access_id", c.accessID),
-		zap.Int("access_key_length", len(c.accessKey)),
-		zap.String("string_to_sign", stringToSign),
-		zap.Int("string_to_sign_length", len(stringToSign)))
-
 	// Generate HMAC SHA256 signature
 	// LogicMonitor SDK: hex encode the hash, then base64 encode the hex string
 	h := hmac.New(sha256.New, []byte(c.accessKey))
@@ -211,10 +189,6 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 	hash := h.Sum(nil)
 	hexString := hex.EncodeToString(hash)
 	signature := base64.StdEncoding.EncodeToString([]byte(hexString))
-
-	c.logger.Debug("Generated signature",
-		zap.String("signature", signature),
-		zap.Int("signature_length", len(signature)))
 
 	// Return formatted auth header using milliseconds timestamp
 	return fmt.Sprintf("LMv1 %s:%s:%d", c.accessID, signature, timestamp)

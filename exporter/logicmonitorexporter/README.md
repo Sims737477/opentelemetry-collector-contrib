@@ -32,7 +32,7 @@ exporters:
     
     # HTTP Client Configuration (confighttp.ClientConfig)
     # These options follow OpenTelemetry standards
-    timeout: 30s                      # HTTP request timeout (default: 30s)
+    timeout: 60s                      # HTTP request timeout (default: 30s, recommended: 60s for batching)
     read_buffer_size: 0               # Read buffer size in bytes (default: 0)
     write_buffer_size: 524288         # Write buffer size in bytes (default: 512KB)
     max_idle_conns: 100               # Maximum idle connections (default: 100)
@@ -232,11 +232,23 @@ The exporter uses OpenTelemetry's standard `confighttp.ClientConfig`, providing 
 
 ### Timeout Configuration
 
+The `timeout` setting controls how long the HTTP client will wait for a complete response from LogicMonitor.
+
 ```yaml
 exporters:
   logicmonitor:
-    timeout: 30s                    # Overall request timeout
+    timeout: 30s                    # Overall request timeout (default: 30s)
 ```
+
+**Timeout Recommendations:**
+- **Default (30s)**: Suitable for most use cases
+- **High-latency networks (60s-90s)**: If you see "context deadline exceeded" errors
+- **Low-latency requirements (10s-15s)**: For faster failure detection
+
+**Common Issues:**
+- **"context deadline exceeded"** error: Increase the timeout value
+- Network latency or slow API responses may require higher timeout values
+- Consider your batch size - larger batches take longer to process
 
 ### Connection Pooling
 
@@ -336,7 +348,7 @@ exporters:
     api_token:
       access_id: "${env:LM_ACCESS_ID}"
       access_key: "${env:LM_ACCESS_KEY}"
-    timeout: 30s
+    timeout: 60s  # Increased timeout for batched requests
     compression: gzip
     retry_on_failure:
       enabled: true
@@ -355,6 +367,72 @@ service:
       processors: [batch]
       exporters: [logicmonitor]
 ```
+
+## Troubleshooting
+
+### Context Deadline Exceeded
+
+**Error:**
+```
+error: failed to send batched metrics: failed to send request: Post "https://...": context deadline exceeded
+```
+
+**Cause:** The HTTP request timeout is too short for the API to respond.
+
+**Solutions:**
+
+1. **Increase timeout** in your configuration:
+   ```yaml
+   exporters:
+     logicmonitor:
+       timeout: 60s  # Increase from default 30s
+   ```
+
+2. **Reduce batch size** to send smaller payloads:
+   ```yaml
+   exporters:
+     logicmonitor:
+       metrics:
+         batch_timeout: 100ms  # Flush batches more frequently
+   ```
+
+3. **Check network connectivity** to LogicMonitor:
+   ```bash
+   curl -I https://your-company.logicmonitor.com/rest/metric/ingest
+   ```
+
+4. **Monitor LogicMonitor API latency** - Response times may vary based on:
+   - Payload size (larger batches take longer)
+   - Network latency between your collector and LogicMonitor
+   - LogicMonitor platform load
+
+**Recommended Configuration for Large Batches:**
+```yaml
+exporters:
+  logicmonitor:
+    timeout: 90s                 # Higher timeout for large batches
+    metrics:
+      batch_timeout: 200ms       # Default batching
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+```
+
+### Authentication Errors (401)
+
+If you see 401 errors after following this guide:
+1. Verify API token permissions in LogicMonitor portal
+2. Ensure token has "Manage Resources" and "Manage DataSources" permissions
+3. Check if the API token is expired
+4. Verify the company subdomain is correct in the endpoint URL
+
+### High Memory Usage
+
+If the exporter uses too much memory:
+1. Reduce `sending_queue.queue_size` (default: 10000)
+2. Reduce `batch_timeout` to flush more frequently
+3. Increase number of consumers: `sending_queue.num_consumers`
 
 ## References
 

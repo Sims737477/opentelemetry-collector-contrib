@@ -57,7 +57,7 @@ exporters:
       access_key: "${env:LM_ACCESS_KEY}"
     
     # HTTP client configuration options (following OpenTelemetry standards)
-    # timeout: 30s                    # HTTP request timeout (default: 30s)
+    timeout: 60s                      # HTTP request timeout (increased for batched requests)
     # read_buffer_size: 0             # Read buffer size in bytes (default: 0, no buffering)
     # write_buffer_size: 0            # Write buffer size in bytes (default: 512KB)
     # max_idle_conns: 100             # Maximum idle connections (default: 100)
