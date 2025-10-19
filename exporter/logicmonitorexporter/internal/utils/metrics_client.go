@@ -109,6 +109,7 @@ func (c *MetricsClient) SendMetrics(ctx context.Context, payload *MetricPayload)
 		zap.String("url", url),
 		zap.String("method", "POST"),
 		zap.Int("body_length", len(body)),
+		zap.String("body_payload", string(body)),
 		zap.Int64("timestamp", timestamp),
 		zap.String("access_id", c.accessID),
 		zap.String("auth_header", auth))
@@ -178,20 +179,16 @@ func (c *MetricsClient) generateAuth(method, path, body string, timestamp int64)
 	// Create string to sign: Method + Timestamp + Body + Path
 	stringToSign := method + strconv.FormatInt(timestamp, 10) + body + path
 
-	// Debug log the string to sign (truncate body if too long)
-	bodyPreview := body
-	if len(bodyPreview) > 200 {
-		bodyPreview = bodyPreview[:200] + "...[truncated]"
-	}
-	
+	// Debug log the string to sign components
 	c.logger.Debug("Generating LMv1 signature",
 		zap.String("method", method),
 		zap.String("path", path),
 		zap.Int64("timestamp", timestamp),
 		zap.Int("body_length", len(body)),
-		zap.String("body_preview", bodyPreview),
+		zap.String("body", body),
 		zap.String("access_id", c.accessID),
 		zap.Int("access_key_length", len(c.accessKey)),
+		zap.String("string_to_sign", stringToSign),
 		zap.Int("string_to_sign_length", len(stringToSign)))
 
 	// Generate HMAC SHA256 signature and base64 encode it
