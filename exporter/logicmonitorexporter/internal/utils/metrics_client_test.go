@@ -29,7 +29,7 @@ func TestSendMetrics_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "/rest/metric/ingest", r.URL.Path)
+		assert.Equal(t, "/metric/ingest", r.URL.Path)
 		assert.Equal(t, "create=true", r.URL.RawQuery)
 		assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		assert.NotEmpty(t, r.Header.Get("Authorization"))
@@ -123,7 +123,7 @@ func TestGenerateAuth(t *testing.T) {
 	client := NewMetricsClient("https://test.logicmonitor.com", "testID", "testKey", http.DefaultClient, zap.NewNop())
 	
 	timestamp := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC).UnixMilli()
-	auth := client.generateAuth("POST", "/rest/metric/ingest", `{"test":"data"}`, timestamp)
+	auth := client.generateAuth("POST", "/metric/ingest", `{"test":"data"}`, timestamp)
 	
 	// Verify format
 	assert.Contains(t, auth, "LMv1")
@@ -131,7 +131,7 @@ func TestGenerateAuth(t *testing.T) {
 	assert.Contains(t, auth, ":")
 	
 	// Verify it's deterministic
-	auth2 := client.generateAuth("POST", "/rest/metric/ingest", `{"test":"data"}`, timestamp)
+	auth2 := client.generateAuth("POST", "/metric/ingest", `{"test":"data"}`, timestamp)
 	assert.Equal(t, auth, auth2)
 }
 
